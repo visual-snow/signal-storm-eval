@@ -9,8 +9,10 @@ spot-checks.
 ## TS 38.413 sec 9.3.1.105: Overload Action (t6)
 
 Bound: the Overload Action IE is an enumeration; the value the suite grades
-against is "Permit Emergency Sessions and mobile terminated services only". t6 is
-an exact, format-tolerant match against this enumeration.
+against is "Permit Emergency Sessions and mobile terminated services only". t6
+now scores a product recommendation: the action, protected traffic, rejected
+traffic, and rationale are graded as components instead of a binary exact
+string.
 
 > [paste verbatim enumeration here]
 
@@ -25,8 +27,9 @@ live peak.
 ## TS 23.501 sec 5.19.7: NAS-level congestion control (t8)
 
 Bound: the 5GC should select each back-off time value so that the deferred
-requests are not synchronized. t8 enforces a non-zero range (range > 0) to
-codify this de-synchronisation requirement.
+requests are not synchronized. t8 enforces an ordered non-zero range and checks
+the expected retry rate implied by deferred volume over the submitted backoff
+spread.
 
 > [paste verbatim here]
 

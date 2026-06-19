@@ -112,6 +112,16 @@ def _window_seconds(window: str) -> float:
     return value * 60 if unit == "m" else value
 
 
+def _text_matches_any(text: object, synonyms: set[str]) -> bool | None:
+    normalized = normalize_verdict(str(text))
+    if not normalized:
+        return None
+    for synonym in synonyms:
+        if normalize_verdict(synonym) in normalized:
+            return True
+    return None
+
+
 def decide(kind: str, completion: str, record: dict, live: LiveState) -> Score:
     """Pure grader: parse the submission, then grade the kind per the spec table.
 
@@ -123,7 +133,7 @@ def decide(kind: str, completion: str, record: dict, live: LiveState) -> Score:
         return Score(value=INCORRECT, answer=None, explanation="unparseable submission")
 
     if kind == "t1":
-        count = fields.get("count")
+        count = fields.get("count", fields.get("request_count"))
         storm = record["storm"]
         rel_tol = storm["scrape_interval_s"] / _window_seconds(storm["storm_interval"])
         ok = isinstance(count, (int, float)) and numeric_within(
@@ -182,7 +192,7 @@ def decide(kind: str, completion: str, record: dict, live: LiveState) -> Score:
         )
 
     if kind == "t6":
-        action = fields.get("overload_action")
+        action = fields.get("overload_action", fields.get("action"))
         ok = action is not None and enum_match(str(action), _T6_ACTION)
         return Score(
             value=CORRECT if ok else INCORRECT,
@@ -243,7 +253,9 @@ def decide(kind: str, completion: str, record: dict, live: LiveState) -> Score:
     if kind == "t10":
         # Negative case: pass only by judging no control needed AND the live
         # baseline confirming low load. Unclear -> None -> fail.
-        verdict_ok = verdict_in(_T10_NO_CONTROL, completion)
+        verdict_ok = _text_matches_any(
+            fields.get("verdict", fields.get("recommendation")), _T10_NO_CONTROL
+        )
         below_idle = live.baseline_peak_rate < _IDLE_PEAK_THRESHOLD
         ok = verdict_ok is True and below_idle
         return Score(

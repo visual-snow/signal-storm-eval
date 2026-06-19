@@ -74,6 +74,46 @@ def test_prompt_never_leaks_the_t6_enum_answer():
         assert _T6_ACTION.lower() not in s.input.lower()
 
 
+def test_prompts_request_product_artifacts():
+    by_kind = {s.metadata["task_kind"]: s for s in build_samples()}
+    expected_fields = {
+        "t1": ["request_count", "unit", "source_signal", "window"],
+        "t2": ["peak_rate", "unit", "source_signal", "rate_window"],
+        "t3": ["request_count", "success_count", "deficit", "unit"],
+        "t4": ["verdict", "peak_rate", "deficit", "evidence"],
+        "t5": ["mechanisms", "excluded", "rationale"],
+        "t6": ["action", "protected_traffic", "rejected_traffic", "rationale"],
+        "t7": [
+            "peak_rate",
+            "capacity_rate",
+            "formula",
+            "tlr_percent",
+            "post_control_rate",
+        ],
+        "t8": [
+            "deferred_volume",
+            "capacity_rate",
+            "backoff_min",
+            "backoff_max",
+            "expected_retry_rate",
+        ],
+        "t9": [
+            "given_tlr_percent",
+            "peak_rate",
+            "capacity_rate",
+            "residual_rate",
+            "verdict",
+            "evidence",
+        ],
+        "t10": ["peak_rate", "deficit", "recommendation", "evidence"],
+    }
+    for kind, fields in expected_fields.items():
+        prompt = by_kind[kind].input
+        for field in fields:
+            assert field in prompt
+        assert "Submit your answer as JSON" in prompt
+
+
 def test_t6_prompt_never_paraphrases_the_enum_answer():
     """t6 must not echo the enum's distinctive terms (catches the paraphrase leak).
 
@@ -112,6 +152,8 @@ def test_sizing_prompts_ask_for_the_answer_without_supplying_it():
     """
     by_kind = {s.metadata["task_kind"]: s for s in build_samples()}
     t7 = by_kind["t7"].input.lower()
-    assert "tlr_percent" in t7 and "1..99" in t7
+    assert "tlr_percent" in t7 and "post_control_rate" in t7
+    assert "1..99" not in t7
     t8 = by_kind["t8"].input.lower()
-    assert "backoff_min" in t8 and "backoff_max" in t8 and "<seconds>" in t8
+    assert "backoff_min" in t8 and "backoff_max" in t8
+    assert "expected_retry_rate" in t8

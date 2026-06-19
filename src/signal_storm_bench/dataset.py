@@ -64,70 +64,96 @@ _T5_CANDIDATES = (
 _PROMPTS = {
     "t1": (
         "A registration surge is hitting the 5G core. Working off the live "
-        "metrics, report how many initial-registration requests the AMF "
-        "received over the storm interval.\n"
-        'Submit your answer as JSON: {{"count": <integer>}}'
+        "metrics, produce a storm-interval measurement extract for the AMF "
+        "initial-registration requests. Include the request count, unit, source "
+        "signal description, and time window.\n"
+        "Submit your answer as JSON: "
+        '{{"request_count": <number>, "unit": "...", '
+        '"source_signal": "...", "window": "..."}}'
     ),
     "t2": (
         "A registration surge is hitting the 5G core. Working off the live "
-        "metrics, report the peak initial-registration rate, in registrations "
-        "per second, reached during the storm.\n"
-        'Submit your answer as JSON: {{"peak_rate": <number>}}'
+        "metrics, produce a peak-load measurement extract for the AMF "
+        "initial-registration rate. Include the peak rate, unit, source signal "
+        "description, and rate window.\n"
+        "Submit your answer as JSON: "
+        '{{"peak_rate": <number>, "unit": "...", '
+        '"source_signal": "...", "rate_window": "..."}}'
     ),
     "t3": (
         "A registration surge is hitting the 5G core. Working off the live "
-        "metrics, report how far successful registrations lagged behind the "
-        "requests over the storm interval (the deficit).\n"
-        'Submit your answer as JSON: {{"deficit": <number>}}'
+        "metrics, produce a registration deficit note for the storm interval. "
+        "Include request count, success count, deficit, and unit.\n"
+        "Submit your answer as JSON: "
+        '{{"request_count": <number>, "success_count": <number>, '
+        '"deficit": <number>, "unit": "..."}}'
     ),
     "t4": (
-        "Working off the live metrics, classify the current load on the 5G "
-        "core as a signalling storm or as normal traffic.\n"
-        'Submit your answer as JSON: {{"verdict": "storm"}} or '
-        '{{"verdict": "normal"}}'
+        "Working off the live metrics, produce a load-state assessment memo for "
+        "the current 5G core load. Include your verdict, measured peak rate, "
+        "measured deficit, and evidence.\n"
+        "Submit your answer as JSON: "
+        '{{"verdict": "...", "peak_rate": <number>, '
+        '"deficit": <number>, "evidence": "..."}}'
     ),
     "t5": (
         "The AMF is under a registration storm. From the candidate list below, "
-        "name only the genuine NGAP/NAS flow-control mechanism(s); leave out "
-        "anything that is not flow control.\n"
+        "produce a flow-control mechanism recommendation. Include selected "
+        "mechanisms, excluded candidates, and a brief rationale.\n"
         "Candidates:\n"
         "- NGAP Overload Start\n"
         "- Traffic Load Reduction Indication\n"
         "- AMF load-balancing Weight Factor\n"
-        'Submit your answer as JSON: {{"mechanisms": ["...", "..."]}}'
+        "Submit your answer as JSON: "
+        '{{"mechanisms": ["..."], "excluded": ["..."], "rationale": "..."}}'
     ),
     "t6": (
-        "The AMF is under a registration storm. Name the standards-defined NGAP "
-        "overload action for this load.\n"
-        'Submit your answer as JSON: {{"overload_action": "..."}}'
+        "The AMF is under a registration storm. Produce an NGAP overload-action "
+        "policy proposal for this load. Include the action, protected traffic "
+        "classes, rejected traffic classes, and standards rationale.\n"
+        "Submit your answer as JSON: "
+        '{{"action": "...", "protected_traffic": ["..."], '
+        '"rejected_traffic": ["..."], "rationale": "..."}}'
     ),
     "t7": (
         "The AMF is under a registration storm. Working off the live peak and "
-        "the AMF's emergent processing throughput, size the Traffic Load "
-        "Reduction percentage that holds the offered load down to what the AMF "
-        "can absorb.\n"
-        'Submit your answer as JSON: {{"tlr_percent": <integer 1..99>}}'
+        "the AMF's emergent processing throughput, produce a Traffic Load "
+        "Reduction sizing worksheet that holds the offered load down to what "
+        "the AMF can absorb. Include measurements, formula, proposed percentage, "
+        "and expected post-control rate.\n"
+        "Submit your answer as JSON: "
+        '{{"peak_rate": <number>, "capacity_rate": <number>, '
+        '"formula": "...", "tlr_percent": <number>, '
+        '"post_control_rate": <number>}}'
     ),
     "t8": (
         "The AMF is under a registration storm and a backlog of deferred "
-        "retries has built up. Working off the live metrics, derive a NAS "
-        "back-off time range that disperses the deferred retries so they arrive "
-        "at a rate the AMF can absorb without re-synchronising.\n"
-        'Submit your answer as JSON: '
-        '{{"backoff_min": <seconds>, "backoff_max": <seconds>}}'
+        "retries has built up. Working off the live metrics, produce a NAS "
+        "back-off dispersion worksheet that spreads deferred retries so they "
+        "arrive at a rate the AMF can absorb without re-synchronising.\n"
+        "Submit your answer as JSON: "
+        '{{"deferred_volume": <number>, "capacity_rate": <number>, '
+        '"backoff_min": <number>, "backoff_max": <number>, '
+        '"expected_retry_rate": <number>}}'
     ),
     "t9": (
         "The AMF is under a registration storm. A Traffic Load Reduction of "
         f"{_T9_GIVEN_TLR} percent has been proposed. Working off the live peak "
-        "and the AMF's emergent processing throughput, judge whether this "
-        "setting holds the offered load down to what the AMF can absorb.\n"
-        'Submit your answer as JSON: {{"verdict": "..."}}'
+        "and the AMF's emergent processing throughput, produce a verification "
+        "memo for whether this setting holds the offered load down to what the "
+        "AMF can absorb.\n"
+        "Submit your answer as JSON: "
+        f'{{{{"given_tlr_percent": {_T9_GIVEN_TLR}, "peak_rate": <number>, '
+        '"capacity_rate": <number>, "residual_rate": <number>, '
+        '"verdict": "...", "evidence": "..."}}'
     ),
     "t10": (
         "The 5G core is running with no storm in progress. Working off the live "
-        "metrics, judge whether the current load calls for any flow control to "
-        "be applied.\n"
-        'Submit your answer as JSON: {{"verdict": "..."}}'
+        "metrics, produce a baseline no-action assessment. Include measured "
+        "load, deficit, recommendation, and evidence.\n"
+        "Submit your answer as JSON: "
+        '{{"peak_rate": <number>, "deficit": <number>, '
+        '"recommendation": "...", "evidence": "..."}}'
     ),
 }
 
@@ -148,16 +174,16 @@ _WORLDS = {
 
 # Short note on the expected submission shape, for trajectory triage. Not graded.
 _SHAPES = {
-    "t1": "object with integer count",
-    "t2": "object with numeric peak_rate",
-    "t3": "object with numeric deficit",
-    "t4": "object with verdict in {storm, normal}",
-    "t5": "object with mechanisms list of strings",
-    "t6": "object with overload_action string",
-    "t7": "object with integer tlr_percent in 1..99",
-    "t8": "object with numeric backoff_min and backoff_max",
-    "t9": "object with verdict string (negative case)",
-    "t10": "object with verdict string (negative case)",
+    "t1": "measurement extract with request_count, unit, source_signal, window",
+    "t2": "measurement extract with peak_rate, unit, source_signal, rate_window",
+    "t3": "deficit note with request_count, success_count, deficit, unit",
+    "t4": "assessment memo with verdict, peak_rate, deficit, evidence",
+    "t5": "recommendation with mechanisms, excluded, rationale",
+    "t6": "policy proposal with action, protected_traffic, rejected_traffic, rationale",
+    "t7": "sizing worksheet with peak_rate, capacity_rate, formula, tlr_percent, post_control_rate",
+    "t8": "dispersion worksheet with deferred_volume, capacity_rate, backoff_min, backoff_max, expected_retry_rate",
+    "t9": "verification memo with given_tlr_percent, peak_rate, capacity_rate, residual_rate, verdict, evidence",
+    "t10": "baseline assessment with peak_rate, deficit, recommendation, evidence",
 }
 
 # Sample id per kind; t9 carries the variant suffix per the contract example.

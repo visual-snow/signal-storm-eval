@@ -51,6 +51,17 @@ class TestT1Count:
         c = json.dumps({"count": 10100})
         assert decide("t1", c, STORM_REC, STORM_LIVE).value == CORRECT
 
+    def test_accepts_product_request_count_during_migration(self) -> None:
+        c = json.dumps(
+            {
+                "request_count": 10100,
+                "unit": "registrations",
+                "source_signal": "AMF requests",
+                "window": "5m",
+            }
+        )
+        assert decide("t1", c, STORM_REC, STORM_LIVE).value == CORRECT
+
     def test_out_of_tolerance_scores_incorrect(self) -> None:
         c = json.dumps({"count": 5000})
         assert decide("t1", c, STORM_REC, STORM_LIVE).value == INCORRECT
@@ -116,6 +127,17 @@ class TestT5Mechanisms:
 class TestT6OverloadAction:
     def test_exact_enum_scores_correct(self) -> None:
         c = json.dumps({"overload_action": _T6_ACTION})
+        assert decide("t6", c, STORM_REC, STORM_LIVE).value == CORRECT
+
+    def test_accepts_product_action_during_migration(self) -> None:
+        c = json.dumps(
+            {
+                "action": _T6_ACTION,
+                "protected_traffic": [],
+                "rejected_traffic": [],
+                "rationale": "",
+            }
+        )
         assert decide("t6", c, STORM_REC, STORM_LIVE).value == CORRECT
 
     def test_wrong_action_scores_incorrect(self) -> None:
@@ -192,6 +214,17 @@ class TestT9UndersizedTlr:
 class TestT10Baseline:
     def test_no_control_verdict_with_idle_live_scores_correct(self) -> None:
         c = json.dumps({"verdict": "no control needed"})
+        assert decide("t10", c, BASELINE_REC, IDLE_LIVE).value == CORRECT
+
+    def test_accepts_recommendation_during_migration(self) -> None:
+        c = json.dumps(
+            {
+                "recommendation": "no flow control needed",
+                "peak_rate": 0,
+                "deficit": 0,
+                "evidence": "idle",
+            }
+        )
         assert decide("t10", c, BASELINE_REC, IDLE_LIVE).value == CORRECT
 
     def test_recommending_control_scores_incorrect(self) -> None:

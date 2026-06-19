@@ -142,6 +142,7 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
+    "anthropic>=0.111.0",
     "inspect_ai>=0.3.158",
     "openai",
     "pyyaml",

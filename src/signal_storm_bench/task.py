@@ -40,11 +40,12 @@ def signal_storm(
     message_limit: int = DEFAULT_MESSAGE_LIMIT,
     kinds: str | list[str] | None = None,
 ) -> Task:
-    """5G-core signalling-storm NOC suite: characterise, recommend, verify on a live core.
+    """5G-core signalling-storm NOC suite: investigate the live core (measure, diagnose, select, size).
 
-    kinds: optional task-kind filter to run a single-task slice; default runs all
-    ten kinds. Inspect passes `-T kinds=t1,t7` as a list and `-T kinds=t7` as a
-    string, so accept both.
+    kinds: optional task-kind filter to run a slice; default runs all four
+    investigation tasks (i2 runs in both the storm and baseline worlds, so the
+    full suite is five samples). Inspect passes `-T kinds=i1,i4` as a list and
+    `-T kinds=i2` as a string, so accept both.
     """
     if kinds is None:
         kind_filter: tuple[str, ...] | None = None
@@ -64,4 +65,7 @@ def signal_storm(
         ],
         scorer=signal_storm_scorer(),
         sandbox=("docker", COMPOSE_FILE),
+        # The i2 load-state judge defaults to Haiku; override with
+        # --model-roles judge=... on the command line.
+        model_roles={"judge": "anthropic/claude-haiku-4-5-20251001"},
     )

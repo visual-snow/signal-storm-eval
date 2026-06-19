@@ -84,20 +84,22 @@ class TestSandboxAndLimits:
         assert default == 50
 
 
+def test_task_builds_five_sample_investigation_suite():
+    from signal_storm_bench.task import signal_storm
+    t = signal_storm()
+    assert len(t.dataset) == 5
+
+
 class TestKindsFilter:
     """`kinds` accepts Inspect's -T forms: a string (one value) or a list (csv)."""
 
     @pytest.mark.parametrize(
         ("kinds", "expected_kinds"),
         [
-            pytest.param(
-                None,
-                {f"t{i}" for i in range(1, 11)},
-                id="all",
-            ),
-            pytest.param("t6", {"t6"}, id="single_string"),
-            pytest.param("t1,t7", {"t1", "t7"}, id="csv_string"),
-            pytest.param(["t1", "t7"], {"t1", "t7"}, id="list_from_inspect"),
+            pytest.param(None, {"i1", "i2", "i3", "i4"}, id="all"),
+            pytest.param("i3", {"i3"}, id="single_string"),
+            pytest.param("i1,i4", {"i1", "i4"}, id="csv_string"),
+            pytest.param(["i1", "i4"], {"i1", "i4"}, id="list_from_inspect"),
         ],
     )
     def test_filters_dataset(

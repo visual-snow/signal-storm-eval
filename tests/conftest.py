@@ -9,6 +9,12 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "scripts"))
 
+# Task construction resolves model_roles eagerly. Provide a stub key so
+# static wiring tests can call signal_storm() without a real API credential.
+# Actual eval runs must set ANTHROPIC_API_KEY in the environment.
+if not os.environ.get("ANTHROPIC_API_KEY"):
+    os.environ["ANTHROPIC_API_KEY"] = "test-placeholder-not-for-inference"
+
 
 def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption(

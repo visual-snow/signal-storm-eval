@@ -46,6 +46,9 @@ def signal_storm(
     investigation tasks (i2 runs in both the storm and baseline worlds, so the
     full suite is five samples). Inspect passes `-T kinds=i1,i4` as a list and
     `-T kinds=i2` as a string, so accept both.
+
+    The i2 load-state judge defaults to Haiku in the scorer
+    (scorers.DEFAULT_JUDGE_MODEL); override it with `--model-roles judge=...`.
     """
     if kinds is None:
         kind_filter: tuple[str, ...] | None = None
@@ -65,7 +68,4 @@ def signal_storm(
         ],
         scorer=signal_storm_scorer(),
         sandbox=("docker", COMPOSE_FILE),
-        # The i2 load-state judge defaults to Haiku; override with
-        # --model-roles judge=... on the command line.
-        model_roles={"judge": "anthropic/claude-haiku-4-5-20251001"},
     )

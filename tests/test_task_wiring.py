@@ -90,6 +90,11 @@ def test_task_builds_five_sample_investigation_suite():
     assert len(t.dataset) == 5
 
 
+def test_judge_default_model_is_declared():
+    from signal_storm_bench.scorers import DEFAULT_JUDGE_MODEL
+    assert DEFAULT_JUDGE_MODEL == "anthropic/claude-haiku-4-5-20251001"
+
+
 class TestKindsFilter:
     """`kinds` accepts Inspect's -T forms: a string (one value) or a list (csv)."""
 

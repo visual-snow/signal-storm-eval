@@ -52,6 +52,10 @@ from signal_storm_bench.sandbox_ops import (
     rejected_volume,
 )
 
+# The i2 load-state judge defaults to Anthropic Haiku; override at run time with
+# --model-roles judge=... (the role takes precedence over this default).
+DEFAULT_JUDGE_MODEL = "anthropic/claude-haiku-4-5-20251001"
+
 
 @dataclass(frozen=True)
 class LiveState:
@@ -288,7 +292,7 @@ async def judge_load_state(
     answer: str, expected_state: str, model: Model | None = None
 ) -> float:
     """Ask the judge model whether the agent's verdict matches the live state."""
-    judge = model or get_model(role="judge")
+    judge = model or get_model(role="judge", default=DEFAULT_JUDGE_MODEL)
     reply = await judge.generate(
         _JUDGE_TEMPLATE.format(answer=answer),
         config=GenerateConfig(temperature=0.0),

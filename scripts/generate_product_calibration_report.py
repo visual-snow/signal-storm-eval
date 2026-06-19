@@ -15,18 +15,24 @@ from pathlib import Path
 from statistics import mean
 from typing import Any
 
-from signal_storm_bench.scorers import _T6_ACTION, LiveState, decide
-
-KIND_ORDER = tuple(f"t{i}" for i in range(1, 11))
+from signal_storm_bench.config import (
+    GIVEN_TLR,
+    KINDS,
+    PEAK_WINDOW,
+    SCRAPE_INTERVAL_S,
+    STORM_INTERVAL,
+    T6_ACTION,
+)
+from signal_storm_bench.scorers import LiveState, decide
 
 STORM_REC: dict[str, Any] = {
     "storm": {
-        "storm_interval": "5m",
-        "peak_window": "30s",
-        "scrape_interval_s": 5,
+        "storm_interval": STORM_INTERVAL,
+        "peak_window": PEAK_WINDOW,
+        "scrape_interval_s": SCRAPE_INTERVAL_S,
     }
 }
-T9_REC: dict[str, Any] = {**STORM_REC, "given_tlr": 10}
+T9_REC: dict[str, Any] = {**STORM_REC, "given_tlr": GIVEN_TLR}
 BASELINE_REC: dict[str, Any] = {}
 
 STORM_LIVE = LiveState(
@@ -320,7 +326,7 @@ CALIBRATION_CASES = (
         "t6",
         "strong_partial",
         {
-            "action": _T6_ACTION,
+            "action": T6_ACTION,
             "protected_traffic": ["emergency sessions", "mobile terminated services"],
             "rejected_traffic": [],
             "rationale": "",
@@ -330,7 +336,7 @@ CALIBRATION_CASES = (
         "t6",
         "reference",
         {
-            "action": _T6_ACTION,
+            "action": T6_ACTION,
             "protected_traffic": ["emergency sessions", "mobile terminated services"],
             "rejected_traffic": [
                 "non emergency traffic",
@@ -595,7 +601,7 @@ def summarize(rows: list[ScoredCase]) -> list[KindSummary]:
     for row in rows:
         by_kind[row.kind].append(row.score)
     summaries = []
-    for kind in KIND_ORDER:
+    for kind in KINDS:
         scores = by_kind[kind]
         summaries.append(
             KindSummary(

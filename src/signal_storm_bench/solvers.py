@@ -12,8 +12,8 @@ shapes the world, and it does so through sandbox_ops alone.
 
 from inspect_ai.solver import Generate, Solver, TaskState, solver
 
+from signal_storm_bench.config import MIN_STORM_PEAK_RATE
 from signal_storm_bench.sandbox_ops import (
-    MIN_STORM_PEAK_RATE,
     run_storm,
     wait_for_boot,
     wait_storm_manifest,

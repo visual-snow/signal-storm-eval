@@ -1,8 +1,8 @@
 """Unit tests for the pure scoring helpers (no sandbox, no model, no docker).
 
-Pins parse_submission, normalize_verdict, and the per-task numeric/set/enum/
-inequality/back-off helpers the scorer composes. These are the whole grading
-surface below decide(), so a regression here surfaces as a fast test failure.
+Pins parse_submission, normalize_verdict, and the numeric/set/phrase helpers the
+scorer composes. These are the whole grading surface below decide(), so a
+regression here surfaces as a fast test failure.
 
 Mirrors transport_oam_bench/tests/test_logic.py.
 """
@@ -10,19 +10,18 @@ Mirrors transport_oam_bench/tests/test_logic.py.
 import pytest
 
 from signal_storm_bench.logic import (
-    backoff_ok,
     clamp01,
     component_average,
-    enum_match,
+    matches_any_phrase,
+    measure,
     normalize_verdict,
     numeric_score,
-    numeric_within,
     parse_submission,
-    set_equal_normalized,
+    rel_scale,
+    residual_rate,
     set_f1_score,
     term_coverage,
     tlr_holds,
-    verdict_in,
 )
 
 # --- parse_submission ---------------------------------------------------------
@@ -77,18 +76,7 @@ def test_normalize_verdict(raw: str, expected: str):
     assert normalize_verdict(raw) == expected
 
 
-# --- numeric_within -----------------------------------------------------------
-
-
-def test_numeric_within_inside_and_outside_tolerance():
-    assert numeric_within(102.0, 100.0, 0.10)
-    assert numeric_within(90.0, 100.0, 0.10)
-    assert not numeric_within(120.0, 100.0, 0.10)
-
-
-def test_numeric_within_zero_ref_only_exact_zero():
-    assert numeric_within(0.0, 0.0, 0.10)
-    assert not numeric_within(0.01, 0.0, 0.10)
+# --- numeric scoring ----------------------------------------------------------
 
 
 def test_numeric_score_is_gradual():
@@ -102,24 +90,19 @@ def test_numeric_score_handles_non_numeric_as_zero():
     assert numeric_score(None, 100, error_scale=50) == 0.0
 
 
-# --- set_equal_normalized (t5) ------------------------------------------------
+def test_rel_scale_floors_at_one_and_uses_magnitude():
+    assert rel_scale(100.0, 0.10) == 10.0
+    assert rel_scale(2.0, 0.10) == 1.0  # floor so tolerance never collapses
+    assert rel_scale(-50.0, 0.10) == 5.0  # magnitude, not sign
 
 
-def test_set_equal_normalized_ignores_case_and_punctuation():
-    assert set_equal_normalized(
-        ["ngap overload start!", "Traffic Load Reduction"],
-        ["NGAP Overload Start", "traffic load reduction"],
-    )
+def test_measure_scores_relative_to_the_reference():
+    assert measure(100, 100) == 1.0
+    assert measure(110, 100, 0.25) == pytest.approx(0.6)  # scale 25, off by 10
+    assert measure(0.4, 0.0, 0.10) == pytest.approx(0.6)  # scale floored to 1.0
 
 
-def test_set_equal_normalized_rejects_distractor_or_missing():
-    expected = ["NGAP Overload Start", "Traffic Load Reduction"]
-    # distractor included
-    assert not set_equal_normalized(
-        [*expected, "AMF load-balancing Weight Factor"], expected
-    )
-    # a genuine mechanism dropped
-    assert not set_equal_normalized(["NGAP Overload Start"], expected)
+# --- set / phrase coverage ----------------------------------------------------
 
 
 def test_set_f1_score_rewards_partial_sets():
@@ -147,6 +130,12 @@ def test_term_coverage_uses_token_boundaries():
     assert term_coverage("AMF telemetry", {"amf"}) == 1.0
 
 
+def test_matches_any_phrase():
+    assert matches_any_phrase("the setting is ineffective", {"ineffective"})
+    assert not matches_any_phrase("it works fine", {"ineffective"})
+    assert not matches_any_phrase("", {"ineffective"})
+
+
 def test_component_average_clamps_and_weights():
     assert clamp01(1.5) == 1.0
     assert component_average(
@@ -154,18 +143,12 @@ def test_component_average_clamps_and_weights():
     ) == pytest.approx(0.875)
 
 
-# --- enum_match (t6) ----------------------------------------------------------
+# --- TLR / residual rate (t7) -------------------------------------------------
 
 
-def test_enum_match_format_tolerant():
-    enum = "Permit Emergency Sessions and mobile terminated services only"
-    assert enum_match(
-        "permit emergency sessions and mobile terminated services only", enum
-    )
-    assert not enum_match("reject all sessions", enum)
-
-
-# --- tlr_holds (t7) -----------------------------------------------------------
+def test_residual_rate_is_the_load_left_after_a_reduction():
+    assert residual_rate(100.0, 10) == pytest.approx(90.0)
+    assert residual_rate(100.0, 60) == pytest.approx(40.0)
 
 
 def test_tlr_holds_in_range_and_capping():
@@ -177,43 +160,3 @@ def test_tlr_holds_in_range_and_capping():
 @pytest.mark.parametrize("tlr", [0, 100, -5, 150])
 def test_tlr_holds_out_of_range_fails(tlr: int):
     assert not tlr_holds(tlr, 100.0, 1.0)
-
-
-# --- backoff_ok (t8) ----------------------------------------------------------
-
-
-def test_backoff_ok_positive_spread_disperses_deficit():
-    # 1000 rejected over a 40s spread = 25/s, within 30/s capacity.
-    assert backoff_ok(10.0, 50.0, 1000.0, 30.0)
-
-
-def test_backoff_ok_zero_or_negative_spread_fails():
-    assert not backoff_ok(20.0, 20.0, 100.0, 30.0)
-    assert not backoff_ok(50.0, 10.0, 100.0, 30.0)
-
-
-def test_backoff_ok_too_narrow_spread_fails():
-    # 1000 rejected over a 10s spread = 100/s, above 30/s capacity.
-    assert not backoff_ok(10.0, 20.0, 1000.0, 30.0)
-
-
-# --- verdict_in (t9/t10 tristate) ---------------------------------------------
-
-_SYNONYMS = {"ineffective", "not capped", "ceiling exceeded", "overloaded"}
-
-
-def test_verdict_in_true_on_synonym_phrase():
-    assert verdict_in(_SYNONYMS, '{"verdict": "the setting is ineffective"}') is True
-
-
-@pytest.mark.parametrize(
-    "completion",
-    [
-        pytest.param('{"verdict": "it works fine"}', id="wrong_verdict"),
-        pytest.param('{"verdict": ""}', id="empty_verdict"),
-        pytest.param('{"other": "ineffective"}', id="no_verdict_field"),
-        pytest.param("not json", id="unparseable"),
-    ],
-)
-def test_verdict_in_unclear_returns_none(completion: str):
-    assert verdict_in(_SYNONYMS, completion) is None

@@ -13,9 +13,11 @@ Usage:
 import sys
 from collections import defaultdict
 
-SPREAD_MIN = 0.25
-BAND_GAP = 0.05
-BANDS_REQUIRED = 3
+from signal_storm_bench.config import (
+    DIFF_BAND_GAP,
+    DIFF_BANDS_REQUIRED,
+    DIFF_SPREAD_MIN,
+)
 
 
 def _numeric(value: object) -> float:
@@ -58,9 +60,9 @@ def differentiated(means: list[float]) -> tuple[bool, float, int]:
     spread = values[-1] - values[0] if values else 0.0
     bands = 1
     for prev, cur in zip(values, values[1:]):
-        if cur - prev > BAND_GAP:
+        if cur - prev > DIFF_BAND_GAP:
             bands += 1
-    ok = bool(values) and spread >= SPREAD_MIN and bands >= BANDS_REQUIRED
+    ok = bool(values) and spread >= DIFF_SPREAD_MIN and bands >= DIFF_BANDS_REQUIRED
     return ok, spread, bands
 
 
@@ -94,7 +96,7 @@ def main() -> int:
         all_pass = all_pass and ok
         print(
             f"{kind}: spread={spread:.3f} bands={bands} "
-            f"-> {'PASS' if ok else 'FAIL'} (need spread>={SPREAD_MIN}, bands>={BANDS_REQUIRED})"
+            f"-> {'PASS' if ok else 'FAIL'} (need spread>={DIFF_SPREAD_MIN}, bands>={DIFF_BANDS_REQUIRED})"
         )
     print("\n" + ("PASS: all requested kinds differentiate" if all_pass else "FAIL"))
     return 0 if all_pass else 1

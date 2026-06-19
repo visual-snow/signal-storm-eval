@@ -8,22 +8,25 @@ Usage: python scripts/check_differentiation.py logs/iter-1
 
 import sys
 
-SPREAD_MIN = 0.25
-BAND_GAP = 0.05
-BANDS_REQUIRED = 3
+from signal_storm_bench.config import (
+    DIFF_BAND_GAP,
+    DIFF_BANDS_REQUIRED,
+    DIFF_SPREAD_MIN,
+)
+
 ROSTER_SIZE = 5
 
 
 def differentiated(means: dict[str, float]) -> bool:
     values = sorted(means.values())
-    if not values or values[-1] - values[0] < SPREAD_MIN:
+    if not values or values[-1] - values[0] < DIFF_SPREAD_MIN:
         return False
-    # greedy band count: walk sorted means, new band when gap > BAND_GAP
+    # greedy band count: walk sorted means, new band when gap > DIFF_BAND_GAP
     bands = 1
     for prev, cur in zip(values, values[1:]):
-        if cur - prev > BAND_GAP:
+        if cur - prev > DIFF_BAND_GAP:
             bands += 1
-    return bands >= BANDS_REQUIRED
+    return bands >= DIFF_BANDS_REQUIRED
 
 
 def collect_means(log_dir: str) -> dict[str, float]:

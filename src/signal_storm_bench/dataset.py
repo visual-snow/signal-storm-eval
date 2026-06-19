@@ -10,53 +10,19 @@ rate, peak, target, capacity, the correct TLR, the back-off pair, the t6 enum,
 the expected verdicts, the t5 distractor, or the metric name. The agent
 discovers all of that off the live core.
 
-Mirrors transport_oam_bench/dataset.py. No import of logic (prompts are pure
-strings); ground truth lives in metadata and live probes.
+Every shared value (storm knobs, windows, the t5 candidate list, the planted
+t9 TLR) comes from config.py; this module never imports an answer.
+
+Mirrors transport_oam_bench/dataset.py.
 """
 
 from inspect_ai.dataset import Sample
 
-# Pinned storm knobs (topology/compose.yaml packetrusher service + storm.sh). The
-# storm runs DURATION_S seconds at STORM_RATE reg/s over UE_COUNT UEs. Recorded
-# in scorer-side metadata so the live PromQL reads are reproducible across epochs
-# for pass^k; the scorer windows `increase(...)`/`rate(...)` with these. The
-# offered rate sits well above the cpu-capped AMF's emergent throughput, so the
-# storm leaves a sustained, permanent reginitreq > reginitsucc deficit (see
-# docs/topology-notes.md "Sustained-overload tuning").
-_STORM = {
-    "storm_rate": 120,
-    "ue_count": 6000,
-    "duration_s": 90,
-    # PromQL window spanning the whole storm for `increase(...)` (t1, t3); the
-    # outer max_over_time range for the peak/capacity reads. Generous enough that
-    # the storm stays in-window through grading latency.
-    "storm_interval": "5m",
-    # Inner rate() sub-window for the peak/capacity reads (t2, t7, t9), and the
-    # scrape interval that drives t1's relative tolerance (~one scrape).
-    "peak_window": "30s",
-    "scrape_interval_s": 5,
-}
+from signal_storm_bench import config
 
-# The baseline world (t10) carries no storm, but t10 reads live_peak_rate with the
-# same window shape, so reuse the storm windows for a reproducible idle read.
-_BASELINE = {
-    "storm_interval": _STORM["storm_interval"],
-    "peak_window": _STORM["peak_window"],
-    "scrape_interval_s": _STORM["scrape_interval_s"],
-}
-
-# t9's undersized Traffic Load Reduction percent, hidden in metadata. Small
-# enough that live_peak_rate * (1 - given_tlr/100) still exceeds capacity_rate,
-# so the only correct verdict is that it fails to hold the load.
-_T9_GIVEN_TLR = 10
-
-# t5 candidate list, published neutrally. The instruction does NOT hint which is
-# the distractor (`AMF load-balancing Weight Factor`); the agent decides.
-_T5_CANDIDATES = (
-    "NGAP Overload Start",
-    "Traffic Load Reduction Indication",
-    "AMF load-balancing Weight Factor",
-)
+# The t5 candidate list, published neutrally in the prompt. Rendered from the one
+# definition in config so the prompt can never drift from what the scorer grades.
+_T5_CANDIDATE_LINES = "\n".join(f"- {candidate}" for candidate in config.T5_CANDIDATES)
 
 
 # Prompts: operator question + JSON answer shape only. Braces escaped ({{ }}) so
@@ -101,9 +67,7 @@ _PROMPTS = {
         "produce a flow-control mechanism recommendation. Include selected "
         "mechanisms, excluded candidates, and a brief rationale.\n"
         "Candidates:\n"
-        "- NGAP Overload Start\n"
-        "- Traffic Load Reduction Indication\n"
-        "- AMF load-balancing Weight Factor\n"
+        f"{_T5_CANDIDATE_LINES}\n"
         "Submit your answer as JSON: "
         '{{"mechanisms": ["..."], "excluded": ["..."], "rationale": "..."}}'
     ),
@@ -138,12 +102,12 @@ _PROMPTS = {
     ),
     "t9": (
         "The AMF is under a registration storm. A Traffic Load Reduction of "
-        f"{_T9_GIVEN_TLR} percent has been proposed. Working off the live peak "
+        f"{config.GIVEN_TLR} percent has been proposed. Working off the live peak "
         "and the AMF's emergent processing throughput, produce a verification "
         "memo for whether this setting holds the offered load down to what the "
         "AMF can absorb.\n"
         "Submit your answer as JSON: "
-        f'{{{{"given_tlr_percent": {_T9_GIVEN_TLR}, "peak_rate": <number>, '
+        f'{{{{"given_tlr_percent": {config.GIVEN_TLR}, "peak_rate": <number>, '
         '"capacity_rate": <number>, "residual_rate": <number>, '
         '"verdict": "...", "evidence": "..."}}'
     ),
@@ -155,21 +119,6 @@ _PROMPTS = {
         '{{"peak_rate": <number>, "deficit": <number>, '
         '"recommendation": "...", "evidence": "..."}}'
     ),
-}
-
-# World per task (per-task table): t1..t9 read an active storm; t10 is the
-# no-storm baseline negative case.
-_WORLDS = {
-    "t1": "storm",
-    "t2": "storm",
-    "t3": "storm",
-    "t4": "storm",
-    "t5": "storm",
-    "t6": "storm",
-    "t7": "storm",
-    "t8": "storm",
-    "t9": "storm",
-    "t10": "baseline",
 }
 
 # Short note on the expected submission shape, for trajectory triage. Not graded.
@@ -186,10 +135,46 @@ _SHAPES = {
     "t10": "baseline assessment with peak_rate, deficit, recommendation, evidence",
 }
 
-# Sample id per kind; t9 carries the variant suffix per the contract example.
-_IDS = {k: ("t9-undersized" if k == "t9" else k) for k in _PROMPTS}
 
-_KINDS = ("t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10")
+def _storm_knobs() -> dict:
+    """The pinned storm the scorer windows its live reads against (storm worlds)."""
+    return {
+        "storm_rate": config.STORM_RATE,
+        "ue_count": config.STORM_UE_COUNT,
+        "duration_s": config.STORM_DURATION_S,
+        "storm_interval": config.STORM_INTERVAL,
+        "peak_window": config.PEAK_WINDOW,
+        "scrape_interval_s": config.SCRAPE_INTERVAL_S,
+    }
+
+
+def _baseline_windows() -> dict:
+    """The read windows the t10 idle baseline reuses (no storm to inject)."""
+    return {
+        "storm_interval": config.STORM_INTERVAL,
+        "peak_window": config.PEAK_WINDOW,
+        "scrape_interval_s": config.SCRAPE_INTERVAL_S,
+    }
+
+
+def _build_metadata(kind: str) -> dict:
+    """The hidden ground truth for one task: world, read windows, and per-kind knobs."""
+    # t10 is the only no-storm negative case; every other kind reads a storm.
+    world = "baseline" if kind == "t10" else "storm"
+    metadata: dict = {
+        "task_kind": kind,
+        "world": world,
+        "submission_shape": _SHAPES[kind],
+    }
+    if world == "storm":
+        metadata["storm"] = _storm_knobs()
+    if world == "baseline":
+        metadata["baseline"] = _baseline_windows()
+    if kind == "t5":
+        metadata["candidates"] = list(config.T5_CANDIDATES)
+    if kind == "t9":
+        metadata["given_tlr"] = config.GIVEN_TLR
+    return metadata
 
 
 def build_samples(kinds: tuple[str, ...] | None = None) -> list[Sample]:
@@ -198,34 +183,19 @@ def build_samples(kinds: tuple[str, ...] | None = None) -> list[Sample]:
     kinds=None builds all ten tasks (the full suite); a subset (e.g.
     ("t1", "t7")) builds only those, for fast single-task iteration.
     """
-    selected = set(kinds) if kinds else set(_KINDS)
+    selected = set(kinds) if kinds else set(config.KINDS)
     samples = []
-    for kind in _KINDS:
+    for kind in config.KINDS:
         if kind not in selected:
             continue
-        world = _WORLDS[kind]
-        metadata: dict = {
-            "task_kind": kind,
-            "world": world,
-            "submission_shape": _SHAPES[kind],
-        }
-        # Storm samples carry the pinned knobs/windows so the scorer's live reads
-        # are deterministic; the baseline sample carries only the read windows.
-        if world == "storm":
-            metadata["storm"] = dict(_STORM)
-        else:
-            metadata["baseline"] = dict(_BASELINE)
-        if kind == "t5":
-            metadata["candidates"] = list(_T5_CANDIDATES)
-        if kind == "t9":
-            metadata["given_tlr"] = _T9_GIVEN_TLR
+        sample_id = "t9-undersized" if kind == "t9" else kind
         samples.append(
             Sample(
-                id=_IDS[kind],
+                id=sample_id,
                 # .format() collapses the {{ }} escapes to literal braces.
                 input=_PROMPTS[kind].format(),
                 target="",
-                metadata=metadata,
+                metadata=_build_metadata(kind),
             )
         )
     return samples

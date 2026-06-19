@@ -17,9 +17,9 @@ from pathlib import Path
 from statistics import mean
 from typing import Any
 
+from signal_storm_bench.config import KINDS
 from signal_storm_bench.scorers import LiveState, decide
 
-KIND_ORDER = tuple(f"t{i}" for i in range(1, 11))
 DEFAULT_INPUTS = ("logs/p5", "logs/p5b")
 DEFAULT_OUTPUT = Path("docs/saved-log-product-calibration.md")
 
@@ -231,8 +231,8 @@ def summarize(rows: list[ScoredSavedSample]) -> list[TaskSummary]:
     for row in rows:
         by_kind[row.kind].append(row.score)
 
-    ordered_kinds = [kind for kind in KIND_ORDER if kind in by_kind]
-    ordered_kinds.extend(sorted(kind for kind in by_kind if kind not in KIND_ORDER))
+    ordered_kinds = [kind for kind in KINDS if kind in by_kind]
+    ordered_kinds.extend(sorted(kind for kind in by_kind if kind not in KINDS))
 
     summaries = []
     for kind in ordered_kinds:

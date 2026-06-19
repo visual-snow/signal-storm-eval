@@ -13,12 +13,12 @@ from typing import Any
 
 import pytest
 
-from signal_storm_bench.dataset import build_samples
-from signal_storm_bench.scorers import (
-    _T6_ACTION,
-    _T9_FAILS,
-    _T10_NO_CONTROL,
+from signal_storm_bench.config import (
+    T6_ACTION,
+    T9_FAILS,
+    T10_NO_CONTROL,
 )
+from signal_storm_bench.dataset import build_samples
 
 ALL_KINDS = ("t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10")
 
@@ -85,7 +85,7 @@ def test_prompt_never_leaks_the_metric_name():
 
 def test_prompt_never_leaks_the_t6_enum_answer():
     for s in build_samples():
-        assert _T6_ACTION.lower() not in _prompt(s).lower()
+        assert T6_ACTION.lower() not in _prompt(s).lower()
 
 
 def test_prompts_request_product_artifacts():
@@ -144,8 +144,8 @@ def test_t6_prompt_never_paraphrases_the_enum_answer():
 @pytest.mark.parametrize(
     ("kind", "synonyms"),
     [
-        pytest.param("t9", _T9_FAILS, id="t9"),
-        pytest.param("t10", _T10_NO_CONTROL, id="t10"),
+        pytest.param("t9", T9_FAILS, id="t9"),
+        pytest.param("t10", T10_NO_CONTROL, id="t10"),
     ],
 )
 def test_negative_prompts_never_leak_the_expected_verdict(

@@ -11,7 +11,7 @@ Usage: python scripts/pass_hat_k.py logs/iter-2
 import sys
 from math import comb
 
-PASS_THRESHOLD = 0.8
+from signal_storm_bench.config import PASS_THRESHOLD
 
 
 def is_pass_value(value: object, threshold: float = PASS_THRESHOLD) -> bool:

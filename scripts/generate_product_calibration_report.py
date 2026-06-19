@@ -21,7 +21,7 @@ from signal_storm_bench.config import (
 )
 from signal_storm_bench.scorers import LiveState, decide
 
-# All four investigation tasks calibrate in the storm world.
+# i1/i2/i4 calibrate against STORM_LIVE; i3 is normative and needs no live values.
 STORM_REC: dict[str, Any] = {
     "storm": {"storm_interval": STORM_INTERVAL},
     "world": "storm",
@@ -146,42 +146,76 @@ CALIBRATION_CASES = (
     # i2: load-state diagnosis
     # Weights: peak_rate 0.30, deficit 0.30, verdict 0.40
     # verdict is binary (precomputed judge score: 0.0 or 1.0)
-    # Strategy: use measurement accuracy + verdict to produce 5 ordered
-    # distinct scores.
-    #   bad:           peak=0,   deficit=0,   verdict=0.0 -> 0.000
-    #   weak_partial:  peak=85,  deficit=0,   verdict=0.0 -> ~0.027
-    #   mid_partial:   peak=110, deficit=0,   verdict=0.0 -> 0.300
-    #   strong_partial: peak=0,  deficit=0,   verdict=1.0 -> 0.400
-    #   reference:     peak=110, deficit=4200, verdict=1.0 -> 1.000
+    # Each anchor reads as a believable answer at its tier: a weak model that
+    # under-reads and calls 92 reg/s normal; a mid model that flags overload
+    # with rough numbers; a strong model with the verdict and near-exact numbers.
+    #   bad:            verdict=0.0, peak=10,  deficit=0    -> 0.000
+    #   weak_partial:   verdict=0.0, peak=92,  deficit=1500 -> ~0.104
+    #   mid_partial:    verdict=1.0, peak=98,  deficit=3500 -> ~0.569
+    #   strong_partial: verdict=1.0, peak=110, deficit=4000 -> ~0.857
+    #   reference:      verdict=1.0, peak=110, deficit=4200 -> 1.000
     # ------------------------------------------------------------------
     CalibrationCase(
         "i2",
         "bad",
-        {"peak_rate": 0, "deficit": 0, "load_state": "normal"},
+        {
+            "load_state": "normal",
+            "action_needed": False,
+            "peak_rate": 10,
+            "deficit": 0,
+            "rationale": "core looks idle",
+        },
         verdict_score=0.0,
     ),
     CalibrationCase(
         "i2",
         "weak_partial",
-        {"peak_rate": 85, "deficit": 0, "load_state": "normal"},
+        {
+            "load_state": "normal",
+            "action_needed": False,
+            "peak_rate": 92,
+            "deficit": 1500,
+            "rationale": "elevated but within range",
+        },
         verdict_score=0.0,
     ),
     CalibrationCase(
         "i2",
         "mid_partial",
-        {"peak_rate": 110, "deficit": 0, "load_state": "normal"},
-        verdict_score=0.0,
+        {
+            "load_state": "overloaded",
+            "action_needed": True,
+            "peak_rate": 98,
+            "deficit": 3500,
+            "rationale": "registration surge, numbers approximate",
+        },
+        verdict_score=1.0,
     ),
     CalibrationCase(
         "i2",
         "strong_partial",
-        {"peak_rate": 0, "deficit": 0, "load_state": "overloaded"},
+        {
+            "load_state": "overloaded",
+            "action_needed": True,
+            "peak_rate": 110,
+            "deficit": 4000,
+            "rationale": "storm in progress, deficit close",
+        },
         verdict_score=1.0,
     ),
     CalibrationCase(
         "i2",
         "reference",
-        {"peak_rate": 110, "deficit": 4200, "load_state": "overloaded"},
+        {
+            "load_state": "overloaded",
+            "action_needed": True,
+            "peak_rate": 110,
+            "deficit": 4200,
+            "rationale": (
+                "live peak 110 reg/s far above capacity with a 4200 "
+                "registration deficit"
+            ),
+        },
         verdict_score=1.0,
     ),
     # ------------------------------------------------------------------

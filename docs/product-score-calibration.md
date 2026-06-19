@@ -7,7 +7,7 @@ Generated from `scripts/generate_product_calibration_report.py` using synthetic 
 | Task | Cases | Min | Max | Mean | Spread | Distinct scores | Anchor scores |
 |---|---:|---:|---:|---:|---:|---:|---|
 | i1 | 5 | 0.000 | 1.000 | 0.534 | 1.000 | 5 | bad=0.000, weak_partial=0.242, mid_partial=0.628, strong_partial=0.799, reference=1.000 |
-| i2 | 5 | 0.000 | 1.000 | 0.345 | 1.000 | 5 | bad=0.000, weak_partial=0.027, mid_partial=0.300, strong_partial=0.400, reference=1.000 |
+| i2 | 5 | 0.000 | 1.000 | 0.506 | 1.000 | 5 | bad=0.000, weak_partial=0.104, mid_partial=0.569, strong_partial=0.857, reference=1.000 |
 | i3 | 5 | 0.000 | 1.000 | 0.564 | 1.000 | 5 | bad=0.000, weak_partial=0.400, mid_partial=0.620, strong_partial=0.800, reference=1.000 |
 | i4 | 5 | 0.000 | 1.000 | 0.632 | 1.000 | 5 | bad=0.000, weak_partial=0.450, mid_partial=0.800, strong_partial=0.909, reference=1.000 |
 
@@ -21,9 +21,9 @@ Generated from `scripts/generate_product_calibration_report.py` using synthetic 
 | i1 | strong_partial | 0.799 | deficit=0.76, peak_rate=0.75, request_count=0.86, success_count=0.85 |
 | i1 | reference | 1.000 | deficit=1.00, peak_rate=1.00, request_count=1.00, success_count=1.00 |
 | i2 | bad | 0.000 | deficit=0.00, peak_rate=0.00, verdict=0.00 |
-| i2 | weak_partial | 0.027 | deficit=0.00, peak_rate=0.09, verdict=0.00 |
-| i2 | mid_partial | 0.300 | deficit=0.00, peak_rate=1.00, verdict=0.00 |
-| i2 | strong_partial | 0.400 | deficit=0.00, peak_rate=0.00, verdict=1.00 |
+| i2 | weak_partial | 0.104 | deficit=0.00, peak_rate=0.35, verdict=0.00 |
+| i2 | mid_partial | 0.569 | deficit=0.00, peak_rate=0.56, verdict=1.00 |
+| i2 | strong_partial | 0.857 | deficit=0.52, peak_rate=1.00, verdict=1.00 |
 | i2 | reference | 1.000 | deficit=1.00, peak_rate=1.00, verdict=1.00 |
 | i3 | bad | 0.000 | no_distractor_selected=0.00, protected_traffic=0.00, rejected_traffic=0.00, selected_mechanisms=0.00 |
 | i3 | weak_partial | 0.400 | no_distractor_selected=1.00, protected_traffic=0.00, rejected_traffic=0.00, selected_mechanisms=0.50 |

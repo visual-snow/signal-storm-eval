@@ -80,13 +80,17 @@ in code and documentation.
 
 ## Calibration evidence
 
-Local unit calibration is encoded in `tests/test_scorer_logic.py`: for each
-task, a reference artifact, a bad artifact, and at least three ordered partial
-artifacts exercise the full numeric scoring range. The saved roster logs
-`logs/p5` and `logs/p5b` predate product scoring, so their binary scores are
-historical only and are not valid product-score distributions. A fresh product
-smoke/calibration run should write to `logs/product-smoke` and then the scripts
-above can generate numeric summaries.
+Local unit calibration is encoded in `tests/test_scorer_logic.py` and summarized
+in `docs/product-score-calibration.md`: for each task, a reference artifact, a
+bad artifact, and three ordered partial artifacts exercise the full numeric
+scoring range. `tests/test_product_calibration_report.py` asserts every task has
+five anchors, a high reference, a low bad anchor, and at least four distinct
+scores.
+
+The saved roster logs `logs/p5` and `logs/p5b` predate product scoring, so their
+binary scores are historical only and are not valid product-score distributions.
+A fresh product smoke/calibration run should write to `logs/product-smoke` and
+then the scripts above can generate numeric model-output summaries.
 
 ## Residual risks
 

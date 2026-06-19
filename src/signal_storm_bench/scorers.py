@@ -255,56 +255,41 @@ def decide(
 
 
 async def _gather_live_state(kind: str, record: dict) -> LiveState:
-    """Probe only what the kind's grading rule needs; default the rest to zero.
+    """Probe only what the kind needs; default the rest to zero.
 
-    Independent probes for a kind are gathered concurrently: they are pure reads
-    of the same Prometheus snapshot, so order cannot change the result.
+    i2 runs in both worlds: in the storm world the live peak/deficit are read as
+    usual; in the baseline world the same windows read an idle peak (~0) and no
+    deficit, which is the negative case the verdict must reach.
     """
-    if kind == "t10":
-        # Baseline world: the idle peak rate (and any residual deficit) are the
-        # only ground truth needed. Same windows as the storm so the read repeats.
-        baseline = record["baseline"]
-        peak, deficit = await asyncio.gather(
-            live_peak_rate(
-                baseline["storm_interval"],
-                baseline["peak_window"],
-                baseline["scrape_interval_s"],
-            ),
-            rejected_volume(baseline["storm_interval"]),
-        )
-        return LiveState(baseline_peak_rate=peak, rejected_volume=deficit)
+    if kind == "i3":
+        # Normative-only selection grader needs no live probe.
+        return LiveState()
 
-    storm = record["storm"]
-    window = storm["storm_interval"]
-    peak_window = storm["peak_window"]
-    step = storm["scrape_interval_s"]
+    world = record.get("world", "storm")
+    windows = record["baseline"] if world == "baseline" else record["storm"]
+    interval = windows["storm_interval"]
+    peak_window = windows["peak_window"]
+    step = windows["scrape_interval_s"]
 
-    if kind == "t1":
-        return LiveState(live_count=await live_count(window))
-    if kind == "t2":
-        return LiveState(live_peak_rate=await live_peak_rate(window, peak_window, step))
-    if kind == "t3":
-        count, deficit = await asyncio.gather(
-            live_count(window), rejected_volume(window)
+    if kind == "i1":
+        count, peak, deficit = await asyncio.gather(
+            live_count(interval),
+            live_peak_rate(interval, peak_window, step),
+            rejected_volume(interval),
         )
-        return LiveState(live_count=count, rejected_volume=deficit)
-    if kind == "t4":
+        return LiveState(live_count=count, live_peak_rate=peak, rejected_volume=deficit)
+    if kind == "i2":
         peak, deficit = await asyncio.gather(
-            live_peak_rate(window, peak_window, step), rejected_volume(window)
+            live_peak_rate(interval, peak_window, step),
+            rejected_volume(interval),
         )
         return LiveState(live_peak_rate=peak, rejected_volume=deficit)
-    if kind in ("t7", "t9"):
-        peak, cap = await asyncio.gather(
-            live_peak_rate(window, peak_window, step),
-            capacity_rate(window, peak_window, step),
-        )
-        return LiveState(live_peak_rate=peak, capacity_rate=cap)
-    if kind == "t8":
+    if kind == "i4":
         deficit, cap = await asyncio.gather(
-            rejected_volume(window), capacity_rate(window, peak_window, step)
+            rejected_volume(interval),
+            capacity_rate(interval, peak_window, step),
         )
         return LiveState(rejected_volume=deficit, capacity_rate=cap)
-    # t5, t6: normative-only graders need no live probe.
     return LiveState()
 
 

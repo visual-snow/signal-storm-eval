@@ -14,7 +14,10 @@ def test_i3_answer_key_partitions_the_candidates():
 
 def test_i3_traffic_classes_present():
     assert config.I3_PROTECTED and config.I3_REJECTED
+    assert set(config.I3_PROTECTED).isdisjoint(config.I3_REJECTED)
 
 
 def test_i2_expected_states_cover_both_worlds():
     assert set(config.I2_EXPECTED_STATE) == {"storm", "baseline"}
+    assert config.I2_EXPECTED_STATE["storm"] == "overloaded"
+    assert config.I2_EXPECTED_STATE["baseline"] == "normal"

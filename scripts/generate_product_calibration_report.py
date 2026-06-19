@@ -10,38 +10,33 @@ from __future__ import annotations
 import json
 import sys
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from statistics import mean
 from typing import Any
 
 from signal_storm_bench.config import (
-    GIVEN_TLR,
     KINDS,
-    PEAK_WINDOW,
-    SCRAPE_INTERVAL_S,
     STORM_INTERVAL,
-    T6_ACTION,
 )
 from signal_storm_bench.scorers import LiveState, decide
 
+# All four investigation tasks calibrate in the storm world.
 STORM_REC: dict[str, Any] = {
-    "storm": {
-        "storm_interval": STORM_INTERVAL,
-        "peak_window": PEAK_WINDOW,
-        "scrape_interval_s": SCRAPE_INTERVAL_S,
-    }
+    "storm": {"storm_interval": STORM_INTERVAL},
+    "world": "storm",
 }
-T9_REC: dict[str, Any] = {**STORM_REC, "given_tlr": GIVEN_TLR}
-BASELINE_REC: dict[str, Any] = {}
 
+# Mirror tests/test_scorer_logic.py so reference anchors land high.
 STORM_LIVE = LiveState(
-    live_count=10000.0,
-    live_peak_rate=100.0,
-    capacity_rate=40.0,
-    rejected_volume=6000.0,
+    live_count=10800.0,
+    live_peak_rate=110.0,
+    capacity_rate=70.0,
+    rejected_volume=4200.0,
 )
-IDLE_LIVE = LiveState(baseline_peak_rate=0.0)
+
+# i3 normative grading needs no live values; use a default LiveState.
+I3_LIVE = LiveState()
 
 
 @dataclass(frozen=True)
@@ -49,6 +44,7 @@ class CalibrationCase:
     kind: str
     label: str
     artifact: dict[str, Any]
+    verdict_score: float | None = field(default=None)
 
 
 @dataclass(frozen=True)
@@ -70,341 +66,208 @@ class KindSummary:
     distinct_scores: int
 
 
+# ---------------------------------------------------------------------------
+# Anchor artifacts
+#
+# STORM_LIVE: live_count=10800, live_peak_rate=110, capacity_rate=70,
+#             rejected_volume=4200, success_ref=6600
+#
+# measure(v, ref, tol): full credit at ref, fades to 0 over tol*ref.
+# Grade_i1 weights: request_count 0.25, peak_rate 0.30, success_count 0.20,
+#                   deficit 0.25.
+# Grade_i2 weights: peak_rate 0.30, deficit 0.30, verdict 0.40.
+# Grade_i3 weights: selected_mechanisms 0.40, no_distractor 0.20,
+#                   protected_traffic 0.20, rejected_traffic 0.20.
+# Grade_i4 weights: deferred_volume 0.15, capacity_measurement 0.20,
+#                   spread_present 0.10, retry_rate_consistency 0.20,
+#                   backoff_safety 0.35.
+# ---------------------------------------------------------------------------
+
 CALIBRATION_CASES = (
+    # ------------------------------------------------------------------
+    # i1: storm measurement extract
+    # STORM_LIVE: live_count=10800, live_peak_rate=110,
+    #             rejected_volume=4200, success_ref=6600
+    # tol for count/success/deficit=0.10; tol for peak=0.25
+    # Scoring: request_count w=0.25, peak_rate w=0.30,
+    #          success_count w=0.20, deficit w=0.25
+    # ------------------------------------------------------------------
     CalibrationCase(
-        "t1",
+        "i1",
         "bad",
         {
-            "request_count": 500,
-            "unit": "packets",
-            "source_signal": "CPU",
-            "window": "instant",
+            "request_count": 100,
+            "peak_rate": 5,
+            "success_count": 100,
+            "deficit": 0,
         },
     ),
     CalibrationCase(
-        "t1",
+        "i1",
         "weak_partial",
         {
-            "request_count": 9000,
-            "unit": "registrations",
-            "source_signal": "AMF initial-registration request counter",
-            "window": "5m",
+            "request_count": 10000,
+            "peak_rate": 85,
+            "success_count": 6200,
+            "deficit": 3900,
         },
     ),
     CalibrationCase(
-        "t1",
+        "i1",
         "mid_partial",
         {
-            "request_count": 9500,
-            "unit": "registrations",
-            "source_signal": "AMF initial-registration request counter",
-            "window": "5m",
+            "request_count": 10500,
+            "peak_rate": 96,
+            "success_count": 6400,
+            "deficit": 4050,
         },
     ),
     CalibrationCase(
-        "t1",
+        "i1",
         "strong_partial",
         {
-            "request_count": 10000,
-            "unit": "packets",
-            "source_signal": "CPU",
-            "window": "now",
+            "request_count": 10650,
+            "peak_rate": 103,
+            "success_count": 6500,
+            "deficit": 4100,
         },
     ),
     CalibrationCase(
-        "t1",
+        "i1",
         "reference",
         {
-            "request_count": 10000,
-            "unit": "registrations",
-            "source_signal": "AMF initial-registration request counter",
-            "window": "5m",
+            "request_count": 10800,
+            "peak_rate": 110,
+            "success_count": 6600,
+            "deficit": 4200,
         },
     ),
+    # ------------------------------------------------------------------
+    # i2: load-state diagnosis
+    # Weights: peak_rate 0.30, deficit 0.30, verdict 0.40
+    # verdict is binary (precomputed judge score: 0.0 or 1.0)
+    # Strategy: use measurement accuracy + verdict to produce 5 ordered
+    # distinct scores.
+    #   bad:           peak=0,   deficit=0,   verdict=0.0 -> 0.000
+    #   weak_partial:  peak=85,  deficit=0,   verdict=0.0 -> ~0.027
+    #   mid_partial:   peak=110, deficit=0,   verdict=0.0 -> 0.300
+    #   strong_partial: peak=0,  deficit=0,   verdict=1.0 -> 0.400
+    #   reference:     peak=110, deficit=4200, verdict=1.0 -> 1.000
+    # ------------------------------------------------------------------
     CalibrationCase(
-        "t2",
+        "i2",
         "bad",
-        {
-            "peak_rate": 10,
-            "unit": "packets",
-            "source_signal": "CPU",
-            "rate_window": "instant",
-        },
+        {"peak_rate": 0, "deficit": 0, "load_state": "normal"},
+        verdict_score=0.0,
     ),
     CalibrationCase(
-        "t2",
+        "i2",
         "weak_partial",
-        {
-            "peak_rate": 120,
-            "unit": "registrations_per_second",
-            "source_signal": "AMF initial-registration request rate",
-            "rate_window": "30s",
-        },
+        {"peak_rate": 85, "deficit": 0, "load_state": "normal"},
+        verdict_score=0.0,
     ),
     CalibrationCase(
-        "t2",
+        "i2",
         "mid_partial",
-        {
-            "peak_rate": 90,
-            "unit": "registrations_per_second",
-            "source_signal": "AMF initial-registration request rate",
-            "rate_window": "30s",
-        },
+        {"peak_rate": 110, "deficit": 0, "load_state": "normal"},
+        verdict_score=0.0,
     ),
     CalibrationCase(
-        "t2",
+        "i2",
         "strong_partial",
-        {
-            "peak_rate": 100,
-            "unit": "registrations",
-            "source_signal": "total request count",
-            "rate_window": "5m",
-        },
+        {"peak_rate": 0, "deficit": 0, "load_state": "overloaded"},
+        verdict_score=1.0,
     ),
     CalibrationCase(
-        "t2",
+        "i2",
         "reference",
-        {
-            "peak_rate": 100,
-            "unit": "registrations_per_second",
-            "source_signal": "AMF initial-registration request rate",
-            "rate_window": "30s",
-        },
+        {"peak_rate": 110, "deficit": 4200, "load_state": "overloaded"},
+        verdict_score=1.0,
     ),
+    # ------------------------------------------------------------------
+    # i3: flow-control selection (normative; no live values needed)
+    # I3_CORRECT = (NGAP Overload Start, Traffic Load Reduction Indication,
+    #               NAS congestion control back-off)
+    # I3_DISTRACTORS = (AMF load-balancing Weight Factor, RACH back-off,
+    #                   SMF Session-AMBR throttling)
+    # I3_PROTECTED = (emergency, mobile terminated)
+    # I3_REJECTED  = (mobile originated, other registrations)
+    # ------------------------------------------------------------------
     CalibrationCase(
-        "t3",
+        "i3",
         "bad",
         {
-            "request_count": 500,
-            "success_count": 500,
-            "deficit": 0,
-            "unit": "packets",
-        },
-    ),
-    CalibrationCase("t3", "weak_partial", {"deficit": 6000, "unit": "registrations"}),
-    CalibrationCase(
-        "t3",
-        "mid_partial",
-        {
-            "request_count": 10000,
-            "success_count": 4000,
-            "deficit": 5500,
-            "unit": "registrations",
-        },
-    ),
-    CalibrationCase(
-        "t3",
-        "strong_partial",
-        {
-            "request_count": 10000,
-            "success_count": 4000,
-            "deficit": 6000,
-            "unit": "packets",
-        },
-    ),
-    CalibrationCase(
-        "t3",
-        "reference",
-        {
-            "request_count": 10000,
-            "success_count": 4000,
-            "deficit": 6000,
-            "unit": "registrations",
-        },
-    ),
-    CalibrationCase(
-        "t4",
-        "bad",
-        {
-            "verdict": "normal",
-            "peak_rate": 0,
-            "deficit": 0,
-            "evidence": "no issue",
-        },
-    ),
-    CalibrationCase("t4", "weak_partial", {"verdict": "storm"}),
-    CalibrationCase(
-        "t4",
-        "mid_partial",
-        {
-            "verdict": "storm",
-            "peak_rate": 90,
-            "deficit": 0,
-            "evidence": "live peak rate indicates overload",
-        },
-    ),
-    CalibrationCase(
-        "t4",
-        "strong_partial",
-        {
-            "verdict": "normal",
-            "peak_rate": 100,
-            "deficit": 6000,
-            "evidence": "live peak rate and registration deficit measured",
-        },
-    ),
-    CalibrationCase(
-        "t4",
-        "reference",
-        {
-            "verdict": "signalling storm",
-            "peak_rate": 100,
-            "deficit": 6000,
-            "evidence": "live peak rate and registration deficit show overload",
-        },
-    ),
-    CalibrationCase(
-        "t5",
-        "bad",
-        {
-            "mechanisms": ["AMF load-balancing Weight Factor"],
-            "excluded": [],
-            "rationale": "load balancing weight factor fixes this",
-        },
-    ),
-    CalibrationCase(
-        "t5",
-        "weak_partial",
-        {
-            "mechanisms": [],
-            "excluded": ["AMF load-balancing Weight Factor"],
-            "rationale": "NGAP overload and traffic load reduction are flow control.",
-        },
-    ),
-    CalibrationCase(
-        "t5",
-        "mid_partial",
-        {
-            "mechanisms": ["NGAP Overload Start"],
-            "excluded": ["AMF load-balancing Weight Factor"],
-            "rationale": "NGAP overload and traffic load reduction are flow control.",
-        },
-    ),
-    CalibrationCase(
-        "t5",
-        "strong_partial",
-        {
-            "mechanisms": ["NGAP Overload Start", "Traffic Load Reduction Indication"],
-            "excluded": ["AMF load-balancing Weight Factor"],
-            "rationale": "these are better choices",
-        },
-    ),
-    CalibrationCase(
-        "t5",
-        "reference",
-        {
-            "mechanisms": ["NGAP Overload Start", "Traffic Load Reduction Indication"],
-            "excluded": ["AMF load-balancing Weight Factor"],
-            "rationale": (
-                "NGAP overload control can signal traffic load reduction; "
-                "load-balancing weight is not a storm flow-control mechanism."
-            ),
-        },
-    ),
-    CalibrationCase(
-        "t6",
-        "bad",
-        {
-            "action": "reject",
+            "mechanisms": [
+                "AMF load-balancing Weight Factor",
+                "RACH back-off (RAN admission)",
+                "SMF Session-AMBR throttling",
+            ],
             "protected_traffic": [],
             "rejected_traffic": ["all sessions"],
-            "rationale": "overload control is needed",
-        },
-    ),
-    CalibrationCase("t6", "weak_partial", {"action": "permit emergency sessions only"}),
-    CalibrationCase(
-        "t6",
-        "mid_partial",
-        {
-            "action": "",
-            "protected_traffic": ["emergency sessions", "mobile terminated services"],
-            "rejected_traffic": [],
-            "rationale": "",
         },
     ),
     CalibrationCase(
-        "t6",
-        "strong_partial",
-        {
-            "action": T6_ACTION,
-            "protected_traffic": ["emergency sessions", "mobile terminated services"],
-            "rejected_traffic": [],
-            "rationale": "",
-        },
-    ),
-    CalibrationCase(
-        "t6",
-        "reference",
-        {
-            "action": T6_ACTION,
-            "protected_traffic": ["emergency sessions", "mobile terminated services"],
-            "rejected_traffic": [
-                "non emergency traffic",
-                "mobile originated registrations",
-            ],
-            "rationale": (
-                "NGAP overload control protects emergency and mobile terminated "
-                "services while rejecting non emergency mobile originated traffic."
-            ),
-        },
-    ),
-    CalibrationCase(
-        "t7",
-        "bad",
-        {
-            "peak_rate": 0,
-            "capacity_rate": 0,
-            "formula": "",
-            "tlr_percent": 10,
-            "post_control_rate": 0,
-        },
-    ),
-    CalibrationCase(
-        "t7",
+        "i3",
         "weak_partial",
         {
-            "peak_rate": 100,
-            "capacity_rate": 40,
-            "formula": "guess",
-            "tlr_percent": 70,
-            "post_control_rate": 10,
+            "mechanisms": ["NGAP Overload Start"],
+            "protected_traffic": [],
+            "rejected_traffic": [],
         },
     ),
     CalibrationCase(
-        "t7",
+        "i3",
         "mid_partial",
         {
-            "peak_rate": 80,
-            "capacity_rate": 40,
-            "formula": "post_control_rate = peak_rate * (1 - tlr_percent/100)",
-            "tlr_percent": 60,
-            "post_control_rate": 40,
+            "mechanisms": [
+                "NGAP Overload Start",
+                "Traffic Load Reduction Indication",
+            ],
+            "protected_traffic": ["emergency"],
+            "rejected_traffic": [],
         },
     ),
     CalibrationCase(
-        "t7",
+        "i3",
         "strong_partial",
         {
-            "peak_rate": 100,
-            "capacity_rate": 40,
-            "formula": "post_control_rate = peak_rate * (1 - tlr_percent/100)",
-            "tlr_percent": 55,
-            "post_control_rate": 45,
+            "mechanisms": [
+                "NGAP Overload Start",
+                "Traffic Load Reduction Indication",
+                "NAS congestion control back-off",
+            ],
+            "protected_traffic": ["emergency", "mobile terminated"],
+            "rejected_traffic": [],
         },
     ),
     CalibrationCase(
-        "t7",
+        "i3",
         "reference",
         {
-            "peak_rate": 100,
-            "capacity_rate": 40,
-            "formula": "post_control_rate = peak_rate * (1 - tlr_percent/100)",
-            "tlr_percent": 60,
-            "post_control_rate": 40,
+            "mechanisms": [
+                "NGAP Overload Start",
+                "Traffic Load Reduction Indication",
+                "NAS congestion control back-off",
+            ],
+            "protected_traffic": ["emergency", "mobile terminated"],
+            "rejected_traffic": ["mobile originated", "other registrations"],
         },
     ),
+    # ------------------------------------------------------------------
+    # i4: NAS back-off dispersion
+    # STORM_LIVE: rejected_volume=4200, capacity_rate=70
+    # resulting_rate = rejected_volume / spread
+    # Weights: deferred_volume 0.15, capacity_measurement 0.20,
+    #          spread_present 0.10, retry_rate_consistency 0.20, backoff_safety 0.35
+    #
+    # bad:            spread=0 -> all zero                           -> 0.000
+    # weak_partial:   spread=200, deferred/cap off -> spread+safety  -> 0.450
+    # mid_partial:    spread=100, deferred ok, cap off, rate=42      -> 0.800
+    # strong_partial: spread=100, all ok, expect off by 8/17.5       -> 0.909
+    # reference:      spread=60, rate=70 (at cap), all exact         -> 1.000
+    # ------------------------------------------------------------------
     CalibrationCase(
-        "t8",
+        "i4",
         "bad",
         {
             "deferred_volume": 0,
@@ -415,152 +278,54 @@ CALIBRATION_CASES = (
         },
     ),
     CalibrationCase(
-        "t8",
+        "i4",
         "weak_partial",
         {
-            "deferred_volume": 3000,
-            "capacity_rate": 80,
-            "backoff_min": 0,
-            "backoff_max": 100,
-            "expected_retry_rate": 30,
-        },
-    ),
-    CalibrationCase(
-        "t8",
-        "mid_partial",
-        {
-            "deferred_volume": 6000,
-            "capacity_rate": 40,
+            "deferred_volume": 2000,
+            "capacity_rate": 50,
             "backoff_min": 0,
             "backoff_max": 200,
-            "expected_retry_rate": 10,
+            "expected_retry_rate": 50,
         },
     ),
     CalibrationCase(
-        "t8",
-        "strong_partial",
+        "i4",
+        "mid_partial",
         {
-            "deferred_volume": 6000,
-            "capacity_rate": 40,
+            "deferred_volume": 4200,
+            "capacity_rate": 50,
             "backoff_min": 0,
             "backoff_max": 100,
-            "expected_retry_rate": 60,
+            "expected_retry_rate": 42,
         },
     ),
     CalibrationCase(
-        "t8",
-        "reference",
+        "i4",
+        "strong_partial",
         {
-            "deferred_volume": 6000,
-            "capacity_rate": 40,
+            "deferred_volume": 4200,
+            "capacity_rate": 70,
             "backoff_min": 0,
-            "backoff_max": 150,
-            "expected_retry_rate": 40,
+            "backoff_max": 100,
+            "expected_retry_rate": 50,
         },
     ),
     CalibrationCase(
-        "t9",
-        "bad",
-        {
-            "given_tlr_percent": 10,
-            "peak_rate": 0,
-            "capacity_rate": 0,
-            "residual_rate": 0,
-            "verdict": "sufficient",
-            "evidence": "works",
-        },
-    ),
-    CalibrationCase("t9", "weak_partial", {"verdict": "insufficient"}),
-    CalibrationCase(
-        "t9",
-        "mid_partial",
-        {
-            "given_tlr_percent": 10,
-            "peak_rate": 100,
-            "capacity_rate": 40,
-            "residual_rate": 90,
-            "verdict": "this holds the load fine",
-            "evidence": "TLR residual load remains above capacity.",
-        },
-    ),
-    CalibrationCase(
-        "t9",
-        "strong_partial",
-        {
-            "given_tlr_percent": 10,
-            "peak_rate": 100,
-            "capacity_rate": 40,
-            "residual_rate": 50,
-            "verdict": "ineffective",
-            "evidence": "TLR residual load still exceeds capacity.",
-        },
-    ),
-    CalibrationCase(
-        "t9",
+        "i4",
         "reference",
         {
-            "given_tlr_percent": 10,
-            "peak_rate": 100,
-            "capacity_rate": 40,
-            "residual_rate": 90,
-            "verdict": "the proposed setting is ineffective",
-            "evidence": "10% TLR leaves residual load 90 above capacity 40.",
-        },
-    ),
-    CalibrationCase(
-        "t10",
-        "bad",
-        {
-            "peak_rate": 100,
-            "deficit": 6000,
-            "recommendation": "apply traffic load reduction now",
-            "evidence": "storm",
-        },
-    ),
-    CalibrationCase(
-        "t10", "weak_partial", {"recommendation": "no flow control required"}
-    ),
-    CalibrationCase(
-        "t10",
-        "mid_partial",
-        {
-            "deficit": 0,
-            "recommendation": "",
-            "evidence": "idle below threshold with no deficit",
-        },
-    ),
-    CalibrationCase(
-        "t10",
-        "strong_partial",
-        {
-            "peak_rate": 0,
-            "recommendation": "no flow control needed",
-            "evidence": "",
-        },
-    ),
-    CalibrationCase(
-        "t10",
-        "reference",
-        {
-            "peak_rate": 0,
-            "deficit": 0,
-            "recommendation": "no flow control needed",
-            "evidence": "idle baseline below threshold with no deficit",
+            "deferred_volume": 4200,
+            "capacity_rate": 70,
+            "backoff_min": 0,
+            "backoff_max": 60,
+            "expected_retry_rate": 70,
         },
     ),
 )
 
 
-def _record_for(kind: str) -> dict[str, Any]:
-    if kind == "t9":
-        return T9_REC
-    if kind == "t10":
-        return BASELINE_REC
-    return STORM_REC
-
-
 def _live_for(kind: str) -> LiveState:
-    return IDLE_LIVE if kind == "t10" else STORM_LIVE
+    return I3_LIVE if kind == "i3" else STORM_LIVE
 
 
 def _components(metadata: dict[str, Any] | None) -> dict[str, float]:
@@ -582,8 +347,9 @@ def score_cases(
         score = decide(
             case.kind,
             json.dumps(case.artifact),
-            _record_for(case.kind),
+            STORM_REC,
             _live_for(case.kind),
+            verdict_score=case.verdict_score,
         )
         rows.append(
             ScoredCase(

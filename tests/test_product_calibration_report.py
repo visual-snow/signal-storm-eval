@@ -5,7 +5,7 @@ def test_product_calibration_cases_cover_every_task() -> None:
     rows = score_cases()
     by_kind = {summary.kind: summary for summary in summarize(rows)}
 
-    assert set(by_kind) == {f"t{i}" for i in range(1, 11)}
+    assert set(by_kind) == {"i1", "i2", "i3", "i4"}
     for summary in by_kind.values():
         assert summary.case_count == 5
         assert summary.maximum >= 0.85
@@ -16,7 +16,7 @@ def test_product_calibration_cases_cover_every_task() -> None:
 
 def test_product_calibration_references_and_bad_anchors() -> None:
     rows = score_cases()
-    for kind in {f"t{i}" for i in range(1, 11)}:
+    for kind in {"i1", "i2", "i3", "i4"}:
         reference = next(
             row for row in rows if row.kind == kind and row.label == "reference"
         )
@@ -35,7 +35,7 @@ def test_product_calibration_partials_are_ordered() -> None:
     rows = score_cases()
     labels = ["bad", "weak_partial", "mid_partial", "strong_partial", "reference"]
 
-    for kind in {f"t{i}" for i in range(1, 11)}:
+    for kind in {"i1", "i2", "i3", "i4"}:
         scores = {
             row.label: round(row.score, 3)
             for row in rows

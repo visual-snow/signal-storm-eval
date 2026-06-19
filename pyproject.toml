@@ -110,6 +110,7 @@ ignore_missing_imports = true
 module = [
     "add_readme_section",
     "check_differentiation",
+    "check_kind_differentiation",
     "export_gate_artifacts",
     "generate_product_calibration_report",
     "generate_readmes",

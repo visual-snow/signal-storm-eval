@@ -19,7 +19,7 @@ BANDS_REQUIRED = 3
 
 
 def _numeric(value: object) -> float:
-    """Map a Score value to [0, 1]: floats pass through, CORRECT/INCORRECT -> 1/0."""
+    """Map a Score value to [0, 1]; legacy C/I logs remain readable."""
     if isinstance(value, (int, float)):
         return float(value)
     if value == "C":

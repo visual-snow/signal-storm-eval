@@ -42,57 +42,226 @@ STORM_LIVE = LiveState(
 IDLE_LIVE = LiveState(baseline_peak_rate=0.0)
 
 
+def assert_score_between(score, low: float, high: float) -> None:
+    assert low <= float(score.value) <= high, score.explanation
+    assert score.metadata and "components" in score.metadata
+
+
 # --- t1..t4: live-counter characterisation ------------------------------------
 
 
-class TestT1Count:
-    def test_within_tolerance_scores_correct(self) -> None:
-        # rel_tol = 5/300 ~ 1.7%; 10000 +/- ~167 passes.
-        c = json.dumps({"count": 10100})
-        assert decide("t1", c, STORM_REC, STORM_LIVE).value == CORRECT
-
-    def test_accepts_product_request_count_during_migration(self) -> None:
+class TestT1Product:
+    def test_reference_scores_high(self) -> None:
         c = json.dumps(
             {
-                "request_count": 10100,
+                "request_count": 10000,
                 "unit": "registrations",
-                "source_signal": "AMF requests",
+                "source_signal": "AMF initial-registration request counter",
                 "window": "5m",
             }
         )
-        assert decide("t1", c, STORM_REC, STORM_LIVE).value == CORRECT
+        assert float(decide("t1", c, STORM_REC, STORM_LIVE).value) >= 0.95
 
-    def test_out_of_tolerance_scores_incorrect(self) -> None:
-        c = json.dumps({"count": 5000})
-        assert decide("t1", c, STORM_REC, STORM_LIVE).value == INCORRECT
+    def test_partial_numeric_scores_midrange(self) -> None:
+        c = json.dumps(
+            {
+                "request_count": 9500,
+                "unit": "registrations",
+                "source_signal": "AMF initial-registration request counter",
+                "window": "5m",
+            }
+        )
+        assert_score_between(decide("t1", c, STORM_REC, STORM_LIVE), 0.60, 0.70)
+
+    def test_right_number_wrong_context_scores_partial(self) -> None:
+        c = json.dumps(
+            {
+                "request_count": 10000,
+                "unit": "packets",
+                "source_signal": "CPU",
+                "window": "now",
+            }
+        )
+        assert_score_between(decide("t1", c, STORM_REC, STORM_LIVE), 0.70, 0.80)
+
+    def test_right_source_and_window_with_bad_count_scores_low_partial(self) -> None:
+        c = json.dumps(
+            {
+                "request_count": 9000,
+                "unit": "registrations",
+                "source_signal": "AMF initial-registration request counter",
+                "window": "5m",
+            }
+        )
+        assert_score_between(decide("t1", c, STORM_REC, STORM_LIVE), 0.20, 0.35)
+
+    def test_bad_artifact_scores_low(self) -> None:
+        c = json.dumps(
+            {
+                "request_count": 500,
+                "unit": "packets",
+                "source_signal": "CPU",
+                "window": "instant",
+            }
+        )
+        assert_score_between(decide("t1", c, STORM_REC, STORM_LIVE), 0.0, 0.20)
 
 
-class TestT2PeakRate:
-    def test_within_ten_percent_scores_correct(self) -> None:
-        assert decide("t2", json.dumps({"peak_rate": 105}), STORM_REC, STORM_LIVE).value == CORRECT
+class TestT2Product:
+    def test_reference_scores_high(self) -> None:
+        c = json.dumps(
+            {
+                "peak_rate": 100,
+                "unit": "registrations_per_second",
+                "source_signal": "AMF initial-registration request rate",
+                "rate_window": "30s",
+            }
+        )
+        assert float(decide("t2", c, STORM_REC, STORM_LIVE).value) >= 0.95
 
-    def test_outside_ten_percent_scores_incorrect(self) -> None:
-        assert decide("t2", json.dumps({"peak_rate": 200}), STORM_REC, STORM_LIVE).value == INCORRECT
+    def test_near_peak_scores_mid_high(self) -> None:
+        c = json.dumps(
+            {
+                "peak_rate": 90,
+                "unit": "registrations_per_second",
+                "source_signal": "AMF initial-registration request rate",
+                "rate_window": "30s",
+            }
+        )
+        assert_score_between(decide("t2", c, STORM_REC, STORM_LIVE), 0.65, 0.80)
+
+    def test_offered_rate_guess_scores_partial(self) -> None:
+        c = json.dumps(
+            {
+                "peak_rate": 120,
+                "unit": "registrations_per_second",
+                "source_signal": "AMF initial-registration request rate",
+                "rate_window": "30s",
+            }
+        )
+        assert_score_between(decide("t2", c, STORM_REC, STORM_LIVE), 0.35, 0.50)
+
+    def test_right_number_wrong_rate_context_scores_partial(self) -> None:
+        c = json.dumps(
+            {
+                "peak_rate": 100,
+                "unit": "registrations",
+                "source_signal": "total request count",
+                "rate_window": "5m",
+            }
+        )
+        assert_score_between(decide("t2", c, STORM_REC, STORM_LIVE), 0.75, 0.90)
+
+    def test_bad_artifact_scores_low(self) -> None:
+        c = json.dumps(
+            {
+                "peak_rate": 10,
+                "unit": "packets",
+                "source_signal": "CPU",
+                "rate_window": "instant",
+            }
+        )
+        assert_score_between(decide("t2", c, STORM_REC, STORM_LIVE), 0.0, 0.20)
 
 
-class TestT3Deficit:
-    def test_within_tolerance_scores_correct(self) -> None:
-        assert decide("t3", json.dumps({"deficit": 6050}), STORM_REC, STORM_LIVE).value == CORRECT
+class TestT3Product:
+    def test_reference_scores_high(self) -> None:
+        c = json.dumps(
+            {
+                "request_count": 10000,
+                "success_count": 4000,
+                "deficit": 6000,
+                "unit": "registrations",
+            }
+        )
+        assert float(decide("t3", c, STORM_REC, STORM_LIVE).value) >= 0.95
 
-    def test_out_of_tolerance_scores_incorrect(self) -> None:
-        assert decide("t3", json.dumps({"deficit": 100}), STORM_REC, STORM_LIVE).value == INCORRECT
+    def test_wrong_deficit_with_right_counts_scores_midrange(self) -> None:
+        c = json.dumps(
+            {
+                "request_count": 10000,
+                "success_count": 4000,
+                "deficit": 5500,
+                "unit": "registrations",
+            }
+        )
+        assert_score_between(decide("t3", c, STORM_REC, STORM_LIVE), 0.60, 0.75)
+
+    def test_right_deficit_missing_counts_scores_partial(self) -> None:
+        c = json.dumps({"deficit": 6000, "unit": "registrations"})
+        assert_score_between(decide("t3", c, STORM_REC, STORM_LIVE), 0.35, 0.50)
+
+    def test_right_numbers_wrong_unit_scores_high_partial(self) -> None:
+        c = json.dumps(
+            {
+                "request_count": 10000,
+                "success_count": 4000,
+                "deficit": 6000,
+                "unit": "packets",
+            }
+        )
+        assert_score_between(decide("t3", c, STORM_REC, STORM_LIVE), 0.85, 0.95)
+
+    def test_bad_artifact_scores_low(self) -> None:
+        c = json.dumps(
+            {
+                "request_count": 500,
+                "success_count": 500,
+                "deficit": 0,
+                "unit": "packets",
+            }
+        )
+        assert_score_between(decide("t3", c, STORM_REC, STORM_LIVE), 0.0, 0.15)
 
 
-class TestT4Classify:
-    def test_storm_verdict_on_storm_live_scores_correct(self) -> None:
-        assert decide("t4", json.dumps({"verdict": "storm"}), STORM_REC, STORM_LIVE).value == CORRECT
+class TestT4Product:
+    def test_reference_scores_high(self) -> None:
+        c = json.dumps(
+            {
+                "verdict": "signalling storm",
+                "peak_rate": 100,
+                "deficit": 6000,
+                "evidence": "live peak rate and registration deficit show overload",
+            }
+        )
+        assert float(decide("t4", c, STORM_REC, STORM_LIVE).value) >= 0.95
 
-    def test_normal_verdict_on_storm_live_scores_incorrect(self) -> None:
-        assert decide("t4", json.dumps({"verdict": "normal"}), STORM_REC, STORM_LIVE).value == INCORRECT
+    def test_verdict_only_scores_low_partial(self) -> None:
+        c = json.dumps({"verdict": "storm"})
+        assert_score_between(decide("t4", c, STORM_REC, STORM_LIVE), 0.25, 0.40)
 
-    def test_normal_verdict_on_idle_live_scores_correct(self) -> None:
-        rec = {"storm": dict(_STORM)}
-        assert decide("t4", json.dumps({"verdict": "normal"}), rec, IDLE_LIVE).value == CORRECT
+    def test_correct_measurements_wrong_verdict_scores_midrange(self) -> None:
+        c = json.dumps(
+            {
+                "verdict": "normal",
+                "peak_rate": 100,
+                "deficit": 6000,
+                "evidence": "live peak rate and registration deficit measured",
+            }
+        )
+        assert_score_between(decide("t4", c, STORM_REC, STORM_LIVE), 0.60, 0.75)
+
+    def test_right_verdict_with_partial_measurements_scores_midrange(self) -> None:
+        c = json.dumps(
+            {
+                "verdict": "storm",
+                "peak_rate": 90,
+                "deficit": 0,
+                "evidence": "live peak rate indicates overload",
+            }
+        )
+        assert_score_between(decide("t4", c, STORM_REC, STORM_LIVE), 0.55, 0.70)
+
+    def test_bad_artifact_scores_low(self) -> None:
+        c = json.dumps(
+            {
+                "verdict": "normal",
+                "peak_rate": 0,
+                "deficit": 0,
+                "evidence": "no issue",
+            }
+        )
+        assert_score_between(decide("t4", c, STORM_REC, STORM_LIVE), 0.0, 0.20)
 
 
 # --- t5/t6: normative graders (no live probe) ---------------------------------

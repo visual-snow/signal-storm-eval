@@ -12,6 +12,7 @@ bounds; never the path the agent took. Unparseable submissions score 0 and never
 raise. Verdict helpers are tristate (None never scores correct).
 """
 
+import json
 from dataclasses import dataclass
 
 from inspect_ai.scorer import (
@@ -28,11 +29,13 @@ from inspect_ai.solver import TaskState
 
 from signal_storm_bench.logic import (
     backoff_ok,
+    component_average,
     enum_match,
     normalize_verdict,
-    numeric_within,
+    numeric_score,
     parse_submission,
     set_equal_normalized,
+    term_coverage,
     tlr_holds,
     verdict_in,
 )
@@ -105,13 +108,6 @@ class LiveState:
     baseline_peak_rate: float = 0.0
 
 
-def _window_seconds(window: str) -> float:
-    """Parse a PromQL range like '2m'/'30s' to seconds (for t1's tolerance)."""
-    unit = window[-1]
-    value = float(window[:-1])
-    return value * 60 if unit == "m" else value
-
-
 def _text_matches_any(text: object, synonyms: set[str]) -> bool | None:
     normalized = normalize_verdict(str(text))
     if not normalized:
@@ -120,6 +116,31 @@ def _text_matches_any(text: object, synonyms: set[str]) -> bool | None:
         if normalize_verdict(synonym) in normalized:
             return True
     return None
+
+
+def _unit_score(value: object, expected_unit: str) -> float:
+    return term_coverage(value, {expected_unit})
+
+
+def _window_score(value: object, expected_window: str) -> float:
+    normalized = normalize_verdict(str(value))
+    if normalize_verdict(expected_window) in normalized:
+        return 1.0
+    if "storm interval" in normalized:
+        return 1.0
+    return 0.0
+
+
+def _product_score(
+    kind: str, fields: dict, components: dict[str, float], weights: dict[str, float]
+) -> Score:
+    score = component_average(components, weights)
+    return Score(
+        value=score,
+        answer=json.dumps(fields, sort_keys=True),
+        explanation=f"{kind} product score={score:.3f}; components={components}",
+        metadata={"components": components},
+    )
 
 
 def decide(kind: str, completion: str, record: dict, live: LiveState) -> Score:
@@ -135,49 +156,131 @@ def decide(kind: str, completion: str, record: dict, live: LiveState) -> Score:
     if kind == "t1":
         count = fields.get("count", fields.get("request_count"))
         storm = record["storm"]
-        rel_tol = storm["scrape_interval_s"] / _window_seconds(storm["storm_interval"])
-        ok = isinstance(count, (int, float)) and numeric_within(
-            float(count), live.live_count, rel_tol
-        )
-        return Score(
-            value=CORRECT if ok else INCORRECT,
-            answer=str(count),
-            explanation=f"count={count} vs live_count={live.live_count} (rel_tol={rel_tol:.3f})",
+        components = {
+            "request_count": numeric_score(
+                count, live.live_count, max(live.live_count * 0.10, 1.0)
+            ),
+            "unit": _unit_score(fields.get("unit"), "registrations"),
+            "source_signal": term_coverage(
+                fields.get("source_signal"),
+                {"amf", "initial registration", "request"},
+            ),
+            "window": _window_score(fields.get("window"), storm["storm_interval"]),
+        }
+        return _product_score(
+            "t1",
+            fields,
+            components,
+            {
+                "request_count": 0.75,
+                "unit": 0.10,
+                "source_signal": 0.10,
+                "window": 0.05,
+            },
         )
 
     if kind == "t2":
         peak = fields.get("peak_rate")
-        ok = isinstance(peak, (int, float)) and numeric_within(
-            float(peak), live.live_peak_rate, 0.10
-        )
-        return Score(
-            value=CORRECT if ok else INCORRECT,
-            answer=str(peak),
-            explanation=f"peak_rate={peak} vs live_peak_rate={live.live_peak_rate} (+/-10%)",
+        components = {
+            "peak_rate": numeric_score(
+                peak, live.live_peak_rate, max(live.live_peak_rate * 0.25, 1.0)
+            ),
+            "unit": _unit_score(fields.get("unit"), "registrations per second"),
+            "source_signal": term_coverage(
+                fields.get("source_signal"),
+                {"amf", "initial registration", "request", "rate"},
+            ),
+            "rate_window": _window_score(fields.get("rate_window"), "30s"),
+        }
+        return _product_score(
+            "t2",
+            fields,
+            components,
+            {
+                "peak_rate": 0.75,
+                "unit": 0.10,
+                "source_signal": 0.10,
+                "rate_window": 0.05,
+            },
         )
 
     if kind == "t3":
+        request_count = fields.get("request_count", fields.get("count"))
+        success_count = fields.get("success_count")
         deficit = fields.get("deficit")
-        storm = record["storm"]
-        rel_tol = storm["scrape_interval_s"] / _window_seconds(storm["storm_interval"])
-        ok = isinstance(deficit, (int, float)) and numeric_within(
-            float(deficit), live.rejected_volume, rel_tol
-        )
-        return Score(
-            value=CORRECT if ok else INCORRECT,
-            answer=str(deficit),
-            explanation=f"deficit={deficit} vs rejected_volume={live.rejected_volume} (rel_tol={rel_tol:.3f})",
+        live_success = live.live_count - live.rejected_volume
+        arithmetic_ref = 0.0
+        arithmetic_scale = 1.0
+        if isinstance(request_count, (int, float)) and isinstance(
+            success_count, (int, float)
+        ):
+            arithmetic_ref = float(request_count) - float(success_count)
+            arithmetic_scale = max(abs(arithmetic_ref) * 0.10, 1.0)
+        components = {
+            "request_count": numeric_score(
+                request_count, live.live_count, max(live.live_count * 0.10, 1.0)
+            ),
+            "success_count": numeric_score(
+                success_count, live_success, max(abs(live_success) * 0.10, 1.0)
+            ),
+            "deficit": numeric_score(
+                deficit, live.rejected_volume, max(live.rejected_volume * 0.10, 1.0)
+            ),
+            "unit": _unit_score(fields.get("unit"), "registrations"),
+            "arithmetic_consistency": (
+                numeric_score(deficit, arithmetic_ref, arithmetic_scale)
+                if isinstance(request_count, (int, float))
+                and isinstance(success_count, (int, float))
+                else 0.0
+            ),
+        }
+        return _product_score(
+            "t3",
+            fields,
+            components,
+            {
+                "request_count": 0.25,
+                "success_count": 0.25,
+                "deficit": 0.35,
+                "unit": 0.10,
+                "arithmetic_consistency": 0.05,
+            },
         )
 
     if kind == "t4":
         verdict = fields.get("verdict")
         is_storm = live.live_peak_rate > _IDLE_PEAK_THRESHOLD
-        normalized = normalize_verdict(verdict) if verdict is not None else ""
-        ok = normalized == ("storm" if is_storm else "normal")
-        return Score(
-            value=CORRECT if ok else INCORRECT,
-            answer=verdict,
-            explanation=f"verdict={normalized!r}, live_peak_rate={live.live_peak_rate}, is_storm={is_storm}",
+        verdict_terms = (
+            {"storm", "signalling storm", "overload", "overloaded"}
+            if is_storm
+            else {"normal", "idle", "baseline"}
+        )
+        components = {
+            "peak_evidence": numeric_score(
+                fields.get("peak_rate"),
+                live.live_peak_rate,
+                max(live.live_peak_rate * 0.25, 1.0),
+            ),
+            "deficit_evidence": numeric_score(
+                fields.get("deficit"),
+                live.rejected_volume,
+                max(live.rejected_volume * 0.10, 1.0),
+            ),
+            "verdict": 1.0 if _text_matches_any(verdict, verdict_terms) else 0.0,
+            "evidence_text": term_coverage(
+                fields.get("evidence"), {"live", "peak rate", "deficit", "overload"}
+            ),
+        }
+        return _product_score(
+            "t4",
+            fields,
+            components,
+            {
+                "peak_evidence": 0.30,
+                "deficit_evidence": 0.25,
+                "verdict": 0.30,
+                "evidence_text": 0.15,
+            },
         )
 
     if kind == "t5":
@@ -291,10 +394,18 @@ async def _gather_live_state(kind: str, record: dict) -> LiveState:
 
     if kind == "t1":
         return LiveState(live_count=await live_count(window))
-    if kind in ("t2", "t4"):
+    if kind == "t2":
         return LiveState(live_peak_rate=await live_peak_rate(window, peak_window, step))
     if kind == "t3":
-        return LiveState(rejected_volume=await rejected_volume(window))
+        return LiveState(
+            live_count=await live_count(window),
+            rejected_volume=await rejected_volume(window),
+        )
+    if kind == "t4":
+        return LiveState(
+            live_peak_rate=await live_peak_rate(window, peak_window, step),
+            rejected_volume=await rejected_volume(window),
+        )
     if kind in ("t7", "t9"):
         return LiveState(
             live_peak_rate=await live_peak_rate(window, peak_window, step),

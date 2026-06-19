@@ -9,6 +9,8 @@ correct TLR, or the back-off pair. The t5 candidate list is published neutrally
 Mirrors transport_oam_bench/tests/test_dataset.py.
 """
 
+from typing import Any
+
 import pytest
 
 from signal_storm_bench.dataset import build_samples
@@ -27,55 +29,67 @@ _METRIC_NAMES = (
 )
 
 
+def _metadata(sample: Any) -> dict[str, Any]:
+    assert sample.metadata is not None
+    return sample.metadata
+
+
+def _prompt(sample: Any) -> str:
+    assert isinstance(sample.input, str)
+    return sample.input
+
+
 def test_ten_samples_unique_ids_all_kinds():
     samples = build_samples()
     assert len(samples) == 10
     assert len({s.id for s in samples}) == 10
-    kinds = {s.metadata["task_kind"] for s in samples}
+    kinds = {_metadata(s)["task_kind"] for s in samples}
     assert kinds == set(ALL_KINDS)
 
 
 def test_metadata_carries_world_and_storm_knobs():
     for s in build_samples():
-        kind = s.metadata["task_kind"]
-        assert s.metadata["world"] in ("storm", "baseline")
+        metadata = _metadata(s)
+        kind = metadata["task_kind"]
+        assert metadata["world"] in ("storm", "baseline")
         if kind == "t10":
-            assert s.metadata["world"] == "baseline"
-            assert "storm" not in s.metadata
+            assert metadata["world"] == "baseline"
+            assert "storm" not in metadata
         else:
-            assert s.metadata["world"] == "storm"
-            storm = s.metadata["storm"]
+            assert metadata["world"] == "storm"
+            storm = metadata["storm"]
             assert storm["storm_interval"] and storm["peak_window"]
             assert storm["scrape_interval_s"] > 0
 
 
 def test_t5_candidates_and_t9_given_tlr_hidden_in_metadata():
-    by_kind = {s.metadata["task_kind"]: s for s in build_samples()}
-    candidates = by_kind["t5"].metadata["candidates"]
+    by_kind = {_metadata(s)["task_kind"]: s for s in build_samples()}
+    candidates = _metadata(by_kind["t5"])["candidates"]
     assert "AMF load-balancing Weight Factor" in candidates  # the distractor
-    assert by_kind["t9"].metadata["given_tlr"] == 10
+    assert _metadata(by_kind["t9"])["given_tlr"] == 10
 
 
 def test_prompts_render_format_escapes():
     """Double-brace escapes collapse to real braces in every prompt."""
     for s in build_samples():
-        assert "{{" not in s.input and "}}" not in s.input
+        prompt = _prompt(s)
+        assert "{{" not in prompt and "}}" not in prompt
 
 
 def test_prompt_never_leaks_the_metric_name():
     for s in build_samples():
-        prompt = s.input.lower()
+        prompt = _prompt(s).lower()
         for metric in _METRIC_NAMES:
             assert metric not in prompt
 
 
 def test_prompt_never_leaks_the_t6_enum_answer():
     for s in build_samples():
-        assert _T6_ACTION.lower() not in s.input.lower()
+        assert _T6_ACTION.lower() not in _prompt(s).lower()
 
 
 def test_prompts_request_product_artifacts():
-    by_kind = {s.metadata["task_kind"]: s for s in build_samples()}
+    by_kind = {_metadata(s)["task_kind"]: s for s in build_samples()}
     expected_fields = {
         "t1": ["request_count", "unit", "source_signal", "window"],
         "t2": ["peak_rate", "unit", "source_signal", "rate_window"],
@@ -108,7 +122,7 @@ def test_prompts_request_product_artifacts():
         "t10": ["peak_rate", "deficit", "recommendation", "evidence"],
     }
     for kind, fields in expected_fields.items():
-        prompt = by_kind[kind].input
+        prompt = _prompt(by_kind[kind])
         for field in fields:
             assert field in prompt
         assert "Submit your answer as JSON" in prompt
@@ -120,8 +134,8 @@ def test_t6_prompt_never_paraphrases_the_enum_answer():
     The enum value names "emergency" and "mobile terminated" services; the prompt
     must keep both out so the action is discovered from the standard, not the prompt.
     """
-    t6 = next(s for s in build_samples() if s.metadata["task_kind"] == "t6")
-    prompt = t6.input.lower()
+    t6 = next(s for s in build_samples() if _metadata(s)["task_kind"] == "t6")
+    prompt = _prompt(t6).lower()
     assert "emergency" not in prompt
     assert "mobile terminated" not in prompt
     assert "mobile-terminated" not in prompt
@@ -137,8 +151,8 @@ def test_t6_prompt_never_paraphrases_the_enum_answer():
 def test_negative_prompts_never_leak_the_expected_verdict(
     kind: str, synonyms: set[str]
 ):
-    sample = next(s for s in build_samples() if s.metadata["task_kind"] == kind)
-    prompt = sample.input.lower()
+    sample = next(s for s in build_samples() if _metadata(s)["task_kind"] == kind)
+    prompt = _prompt(sample).lower()
     for synonym in synonyms:
         assert synonym not in prompt
 
@@ -150,10 +164,10 @@ def test_sizing_prompts_ask_for_the_answer_without_supplying_it():
     prompt may name the JSON shape but must keep the slots as placeholders so no
     correct value is supplied.
     """
-    by_kind = {s.metadata["task_kind"]: s for s in build_samples()}
-    t7 = by_kind["t7"].input.lower()
+    by_kind = {_metadata(s)["task_kind"]: s for s in build_samples()}
+    t7 = _prompt(by_kind["t7"]).lower()
     assert "tlr_percent" in t7 and "post_control_rate" in t7
     assert "1..99" not in t7
-    t8 = by_kind["t8"].input.lower()
+    t8 = _prompt(by_kind["t8"]).lower()
     assert "backoff_min" in t8 and "backoff_max" in t8
     assert "expected_retry_rate" in t8

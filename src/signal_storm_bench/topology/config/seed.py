@@ -24,19 +24,32 @@ security = {
     "op": None,
     "opc": os.environ["OPC"],
 }
-slice_profile = [{
-    "sst": int(os.environ["SST"]),
-    "sd": os.environ["SD"],
-    "default_indicator": True,
-    "session": [{
-        "name": "internet",
-        "type": 1,
-        "pcc_rule": [],
-        "ambr": {"uplink": {"value": 1, "unit": 3}, "downlink": {"value": 1, "unit": 3}},
-        "qos": {"index": 9, "arp": {"priority_level": 8,
-                "pre_emption_capability": 1, "pre_emption_vulnerability": 1}},
-    }],
-}]
+slice_profile = [
+    {
+        "sst": int(os.environ["SST"]),
+        "sd": os.environ["SD"],
+        "default_indicator": True,
+        "session": [
+            {
+                "name": "internet",
+                "type": 1,
+                "pcc_rule": [],
+                "ambr": {
+                    "uplink": {"value": 1, "unit": 3},
+                    "downlink": {"value": 1, "unit": 3},
+                },
+                "qos": {
+                    "index": 9,
+                    "arp": {
+                        "priority_level": 8,
+                        "pre_emption_capability": 1,
+                        "pre_emption_vulnerability": 1,
+                    },
+                },
+            }
+        ],
+    }
+]
 ue_ambr = {"uplink": {"value": 1, "unit": 3}, "downlink": {"value": 1, "unit": 3}}
 
 db = MongoClient("mongodb://mongodb:27017").open5gs
@@ -45,18 +58,21 @@ if existing >= count:
     print("already seeded", existing, "subscribers; skipping")
     raise SystemExit(0)
 
-docs = [{
-    "_id": ObjectId(),
-    "imsi": imsi,
-    "subscribed_rau_tau_timer": 12,
-    "network_access_mode": 0,
-    "subscriber_status": 0,
-    "access_restriction_data": 32,
-    "slice": slice_profile,
-    "ambr": ue_ambr,
-    "security": security,
-    "schema_version": 1,
-    "__v": 0,
-} for imsi in imsis]
+docs = [
+    {
+        "_id": ObjectId(),
+        "imsi": imsi,
+        "subscribed_rau_tau_timer": 12,
+        "network_access_mode": 0,
+        "subscriber_status": 0,
+        "access_restriction_data": 32,
+        "slice": slice_profile,
+        "ambr": ue_ambr,
+        "security": security,
+        "schema_version": 1,
+        "__v": 0,
+    }
+    for imsi in imsis
+]
 db["subscribers"].insert_many(docs)
 print("seeded", len(docs), "subscribers")

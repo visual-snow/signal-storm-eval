@@ -101,7 +101,7 @@ extra_checks = true
 disable_error_code = "unused-ignore"
 
 [[tool.mypy.overrides]]
-module = ["datasets", "datasets.*"]
+module = "datasets"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
@@ -109,10 +109,15 @@ ignore_missing_imports = true
 # mypy can't resolve them statically. Treat them as untyped.
 module = [
     "add_readme_section",
-    "generate_readmes",
     "check_differentiation",
+    "export_gate_artifacts",
+    "generate_readmes",
     "pass_hat_k",
 ]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["bson", "pymongo"]
 ignore_missing_imports = true
 
 [project]

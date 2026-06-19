@@ -129,7 +129,9 @@ async def live_count(window: str) -> float:
     return await _query_scalar(f"increase({REGINITREQ}[{window}])")
 
 
-def _max_sustained_rate(metric: str, storm_window: str, peak_window: str, step_s: int) -> str:
+def _max_sustained_rate(
+    metric: str, storm_window: str, peak_window: str, step_s: int
+) -> str:
     """PromQL for the max sustained rate of a counter over the storm window.
 
     The storm window is the outer max_over_time range, peak_window the inner
@@ -156,9 +158,7 @@ async def capacity_rate(storm_window: str, peak_window: str, step_s: int) -> flo
 
 async def rejected_volume(window: str) -> float:
     """Deficit = reginitreq increase minus reginitsucc increase (registrations)."""
-    promql = (
-        f"increase({REGINITREQ}[{window}]) - increase({REGINITSUCC}[{window}])"
-    )
+    promql = f"increase({REGINITREQ}[{window}]) - increase({REGINITSUCC}[{window}])"
     return await _query_scalar(promql)
 
 

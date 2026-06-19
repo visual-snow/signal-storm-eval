@@ -77,7 +77,10 @@ REFERENCE_PRODUCTS = {
     "t6": {
         "action": _T6_ACTION,
         "protected_traffic": ["emergency sessions", "mobile terminated services"],
-        "rejected_traffic": ["non emergency traffic", "mobile originated registrations"],
+        "rejected_traffic": [
+            "non emergency traffic",
+            "mobile originated registrations",
+        ],
         "rationale": (
             "NGAP overload control protects emergency and mobile terminated services "
             "while rejecting non emergency mobile originated traffic."
@@ -132,7 +135,7 @@ class TestT1Product:
                 "window": "5m",
             }
         )
-        assert float(decide("t1", c, STORM_REC, STORM_LIVE).value) >= 0.95
+        assert_score_between(decide("t1", c, STORM_REC, STORM_LIVE), 0.95, 1.0)
 
     def test_partial_numeric_scores_midrange(self) -> None:
         c = json.dumps(
@@ -189,7 +192,7 @@ class TestT2Product:
                 "rate_window": "30s",
             }
         )
-        assert float(decide("t2", c, STORM_REC, STORM_LIVE).value) >= 0.95
+        assert_score_between(decide("t2", c, STORM_REC, STORM_LIVE), 0.95, 1.0)
 
     def test_near_peak_scores_mid_high(self) -> None:
         c = json.dumps(
@@ -246,7 +249,7 @@ class TestT3Product:
                 "unit": "registrations",
             }
         )
-        assert float(decide("t3", c, STORM_REC, STORM_LIVE).value) >= 0.95
+        assert_score_between(decide("t3", c, STORM_REC, STORM_LIVE), 0.95, 1.0)
 
     def test_wrong_deficit_with_right_counts_scores_midrange(self) -> None:
         c = json.dumps(
@@ -296,7 +299,7 @@ class TestT4Product:
                 "evidence": "live peak rate and registration deficit show overload",
             }
         )
-        assert float(decide("t4", c, STORM_REC, STORM_LIVE).value) >= 0.95
+        assert_score_between(decide("t4", c, STORM_REC, STORM_LIVE), 0.95, 1.0)
 
     def test_verdict_only_scores_low_partial(self) -> None:
         c = json.dumps({"verdict": "storm"})
@@ -354,7 +357,7 @@ class TestT5Product:
                 ),
             }
         )
-        assert float(decide("t5", c, STORM_REC, STORM_LIVE).value) >= 0.95
+        assert_score_between(decide("t5", c, STORM_REC, STORM_LIVE), 0.95, 1.0)
 
     def test_one_genuine_mechanism_scores_partial(self) -> None:
         c = json.dumps(
@@ -427,7 +430,7 @@ class TestT6Product:
                 ),
             }
         )
-        assert float(decide("t6", c, STORM_REC, STORM_LIVE).value) >= 0.95
+        assert_score_between(decide("t6", c, STORM_REC, STORM_LIVE), 0.95, 1.0)
 
     def test_action_only_scores_partial(self) -> None:
         c = json.dumps({"action": "permit emergency sessions only"})
@@ -487,7 +490,7 @@ class TestT7Worksheet:
                 "post_control_rate": 40,
             }
         )
-        assert float(decide("t7", c, STORM_REC, STORM_LIVE).value) >= 0.95
+        assert_score_between(decide("t7", c, STORM_REC, STORM_LIVE), 0.95, 1.0)
 
     def test_near_miss_tlr_scores_high_partial(self) -> None:
         c = json.dumps(
@@ -549,7 +552,7 @@ class TestT8Worksheet:
                 "expected_retry_rate": 40,
             }
         )
-        assert float(decide("t8", c, STORM_REC, STORM_LIVE).value) >= 0.95
+        assert_score_between(decide("t8", c, STORM_REC, STORM_LIVE), 0.95, 1.0)
 
     def test_too_narrow_spread_scores_high_partial(self) -> None:
         c = json.dumps(
@@ -615,7 +618,7 @@ class TestT9VerificationMemo:
                 "evidence": "10% TLR leaves residual load 90 above capacity 40.",
             }
         )
-        assert float(decide("t9", c, T9_REC, STORM_LIVE).value) >= 0.95
+        assert_score_between(decide("t9", c, T9_REC, STORM_LIVE), 0.95, 1.0)
 
     def test_verdict_only_scores_low(self) -> None:
         c = json.dumps({"verdict": "insufficient"})
@@ -671,7 +674,7 @@ class TestT10BaselineAssessment:
                 "evidence": "idle baseline below threshold with no deficit",
             }
         )
-        assert float(decide("t10", c, BASELINE_REC, IDLE_LIVE).value) >= 0.95
+        assert_score_between(decide("t10", c, BASELINE_REC, IDLE_LIVE), 0.95, 1.0)
 
     def test_recommendation_only_scores_low(self) -> None:
         c = json.dumps({"recommendation": "no flow control required"})
@@ -732,7 +735,11 @@ class TestUnparseableNeverErrors:
 
     def test_reference_products_return_float_scores(self) -> None:
         for kind, artifact in REFERENCE_PRODUCTS.items():
-            rec = T9_REC if kind == "t9" else (BASELINE_REC if kind == "t10" else STORM_REC)
+            rec = (
+                T9_REC
+                if kind == "t9"
+                else (BASELINE_REC if kind == "t10" else STORM_REC)
+            )
             live = IDLE_LIVE if kind == "t10" else STORM_LIVE
             score = decide(kind, json.dumps(artifact), rec, live)
             assert isinstance(score.value, float), kind

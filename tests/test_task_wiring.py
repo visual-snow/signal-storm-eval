@@ -11,7 +11,7 @@ Mirrors transport_oam_bench/tests/test_task_wiring.py.
 import inspect
 from collections.abc import Iterable
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import pytest
 from inspect_ai._util.registry import registry_info
@@ -30,6 +30,11 @@ from signal_storm_bench.task import (
 _INSPECT_DEFAULT_PHRASE = "helpful assistant attempting to submit"
 
 
+def _metadata(sample: Any) -> dict[str, Any]:
+    assert sample.metadata is not None
+    return sample.metadata
+
+
 @pytest.fixture
 def chain_names() -> list[str]:
     """Registry names of the assembled, flattened task solver chain."""
@@ -42,9 +47,7 @@ class TestSolverChainComposition:
         ("registry_name", "expected_count"),
         [
             pytest.param("inspect_ai/system_message", 1, id="single_system_message"),
-            pytest.param(
-                "signal_storm_bench/world_setup", 1, id="world_setup_present"
-            ),
+            pytest.param("signal_storm_bench/world_setup", 1, id="world_setup_present"),
             pytest.param("inspect_ai/basic_agent_loop", 1, id="agent_loop_present"),
         ],
     )
@@ -54,9 +57,9 @@ class TestSolverChainComposition:
         assert chain_names.count(registry_name) == expected_count
 
     def test_world_setup_precedes_agent_loop(self, chain_names: list[str]) -> None:
-        assert chain_names.index(
-            "signal_storm_bench/world_setup"
-        ) < chain_names.index("inspect_ai/basic_agent_loop")
+        assert chain_names.index("signal_storm_bench/world_setup") < chain_names.index(
+            "inspect_ai/basic_agent_loop"
+        )
 
     def test_domain_prompt_is_not_inspect_default(self) -> None:
         assert _INSPECT_DEFAULT_PHRASE not in SYSTEM_PROMPT
@@ -101,5 +104,5 @@ class TestKindsFilter:
         self, kinds: str | list[str] | None, expected_kinds: set[str]
     ) -> None:
         task = signal_storm(kinds=kinds)
-        got = {s.metadata["task_kind"] for s in task.dataset}
+        got = {_metadata(s)["task_kind"] for s in task.dataset}
         assert got == expected_kinds

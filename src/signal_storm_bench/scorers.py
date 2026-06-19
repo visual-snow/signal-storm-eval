@@ -61,32 +61,61 @@ _T6_ACTION = "Permit Emergency Sessions and mobile terminated services only"
 # ("insufficient", "not needed"), never bare state words ("overloaded", "no flow
 # control") that occur in both a correct and an incorrect answer.
 _T9_FAILS = {
-    "ineffective", "not effective",
-    "insufficient", "not sufficient",
-    "inadequate", "not adequate",
+    "ineffective",
+    "not effective",
+    "insufficient",
+    "not sufficient",
+    "inadequate",
+    "not adequate",
     "not enough",
     "too low",
-    "does not hold", "doesn t hold", "will not hold", "won t hold",
-    "cannot hold", "can t hold", "fails to hold",
-    "not capped", "does not cap", "will not cap", "won t cap",
-    "ceiling exceeded", "still overloaded", "remains overloaded",
+    "does not hold",
+    "doesn t hold",
+    "will not hold",
+    "won t hold",
+    "cannot hold",
+    "can t hold",
+    "fails to hold",
+    "not capped",
+    "does not cap",
+    "will not cap",
+    "won t cap",
+    "ceiling exceeded",
+    "still overloaded",
+    "remains overloaded",
 }
 _T10_NO_CONTROL = {
-    "no control needed", "no flow control needed", "no flow control is needed",
-    "no control required", "no flow control required", "no flow control is required",
-    "flow control is not needed", "flow control not needed",
-    "flow control is not required", "flow control not required",
-    "control is not needed", "control not needed",
-    "not needed", "not required", "not necessary",
-    "none needed", "none required",
-    "no action needed", "no action required",
-    "unnecessary", "unwarranted",
-    "below ceiling", "below threshold", "below the idle",
+    "no control needed",
+    "no flow control needed",
+    "no flow control is needed",
+    "no control required",
+    "no flow control required",
+    "no flow control is required",
+    "flow control is not needed",
+    "flow control not needed",
+    "flow control is not required",
+    "flow control not required",
+    "control is not needed",
+    "control not needed",
+    "not needed",
+    "not required",
+    "not necessary",
+    "none needed",
+    "none required",
+    "no action needed",
+    "no action required",
+    "unnecessary",
+    "unwarranted",
+    "below ceiling",
+    "below threshold",
+    "below the idle",
 }
 
 # Live peak below this (reg/s) is idle/normal load; above it is a storm. Used by
 # t4 (storm world must read above it) and t10 (baseline must read below it).
 _IDLE_PEAK_THRESHOLD = 1.0
+_TLR_MIN_PERCENT = 1.0
+_TLR_MAX_PERCENT = 99.0
 
 
 @dataclass(frozen=True)
@@ -155,12 +184,17 @@ def _product_score(
 
 def _required_tlr(live_peak_rate: float, capacity: float) -> float:
     if live_peak_rate <= 0:
-        return 99.0
-    return max(1.0, min(99.0, (1 - capacity / live_peak_rate) * 100))
+        return _TLR_MAX_PERCENT
+    return max(
+        _TLR_MIN_PERCENT,
+        min(_TLR_MAX_PERCENT, (1 - capacity / live_peak_rate) * 100),
+    )
 
 
-def _tlr_safety_score(tlr: float | None, live_peak_rate: float, capacity: float) -> float:
-    if tlr is None or not 1 <= tlr <= 99:
+def _tlr_safety_score(
+    tlr: float | None, live_peak_rate: float, capacity: float
+) -> float:
+    if tlr is None or not _TLR_MIN_PERCENT <= tlr <= _TLR_MAX_PERCENT:
         return 0.0
     required = _required_tlr(live_peak_rate, capacity)
     if live_peak_rate * (1 - tlr / 100) <= capacity:
@@ -386,7 +420,9 @@ def decide(kind: str, completion: str, record: dict, live: LiveState) -> Score:
 
     if kind == "t7":
         tlr = as_float(fields.get("tlr_percent"))
-        post_expected = live.live_peak_rate * (1 - tlr / 100) if tlr is not None else 0.0
+        post_expected = (
+            live.live_peak_rate * (1 - tlr / 100) if tlr is not None else 0.0
+        )
         post_rate_score = numeric_score(
             fields.get("post_control_rate"),
             post_expected,
@@ -407,8 +443,12 @@ def decide(kind: str, completion: str, record: dict, live: LiveState) -> Score:
                 max(live.capacity_rate * 0.25, 1.0),
             ),
             "formula_consistency": (formula_terms + post_rate_score) / 2,
-            "tlr_safety": _tlr_safety_score(tlr, live.live_peak_rate, live.capacity_rate),
-            "range_sanity": 1.0 if tlr is not None and 1 <= tlr <= 99 else 0.0,
+            "tlr_safety": _tlr_safety_score(
+                tlr, live.live_peak_rate, live.capacity_rate
+            ),
+            "range_sanity": 1.0
+            if tlr is not None and _TLR_MIN_PERCENT <= tlr <= _TLR_MAX_PERCENT
+            else 0.0,
         }
         return _product_score(
             "t7",
@@ -452,7 +492,11 @@ def decide(kind: str, completion: str, record: dict, live: LiveState) -> Score:
         expected_value = as_float(expected_retry_rate)
         if spread <= 0:
             backoff_safety = 0.0
-        elif submitted_capacity is not None and expected_value is not None and expected_value <= submitted_capacity:
+        elif (
+            submitted_capacity is not None
+            and expected_value is not None
+            and expected_value <= submitted_capacity
+        ):
             backoff_safety = 1.0
         else:
             backoff_safety = numeric_score(
@@ -509,7 +553,9 @@ def decide(kind: str, completion: str, record: dict, live: LiveState) -> Score:
                 residual_rate,
                 error_scale=max(live.capacity_rate * 0.25, 1.0),
             ),
-            "verdict": 1.0 if _text_matches_any(fields.get("verdict"), _T9_FAILS) else 0.0,
+            "verdict": 1.0
+            if _text_matches_any(fields.get("verdict"), _T9_FAILS)
+            else 0.0,
             "evidence": term_coverage(
                 fields.get("evidence"), {"tlr", "residual", "capacity"}
             ),

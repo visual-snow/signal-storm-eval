@@ -18,8 +18,8 @@ from signal_storm_bench.logic import (
     numeric_score,
     numeric_within,
     parse_submission,
-    set_f1_score,
     set_equal_normalized,
+    set_f1_score,
     term_coverage,
     tlr_holds,
     verdict_in,
@@ -154,7 +154,9 @@ def test_component_average_clamps_and_weights():
 
 def test_enum_match_format_tolerant():
     enum = "Permit Emergency Sessions and mobile terminated services only"
-    assert enum_match("permit emergency sessions and mobile terminated services only", enum)
+    assert enum_match(
+        "permit emergency sessions and mobile terminated services only", enum
+    )
     assert not enum_match("reject all sessions", enum)
 
 

@@ -1,0 +1,15 @@
+title: "Signal Storm Bench"
+description: |
+  A live Open5GS 5G-core signalling-storm NOC eval: the agent reads a real
+  registration storm off Prometheus, recommends NGAP/NAS flow control, and
+  verifies it. Outcome-only grading; pass^k headline.
+group: Agents
+contributors:
+  - emolero
+version: "1-A"
+tags: ["Agent", "Telecom"]
+tasks:
+  - name: signal_storm
+    dataset_samples: 10
+metadata:
+  sandbox: ["solver"]

@@ -1,0 +1,126 @@
+"""Export run summary and sampled transcripts for the eval-reviewer gate.
+
+The reviewer is hermetic (Read/Grep/Glob only), so everything it judges must
+exist as plain files. Writes to gate_exports/iter-<n>/:
+  summary.md                    per-model means, errors, epochs
+  transcripts/<model>__<sample>__epoch<k>.md   sampled transcripts
+
+Usage: python scripts/export_gate_artifacts.py logs/iter-1 gate_exports/iter-1
+"""
+
+import sys
+from collections import defaultdict
+from pathlib import Path
+
+from inspect_ai.log import list_eval_logs, read_eval_log
+
+# Sampling policy: per model, export one correct and one incorrect/errored
+# sample transcript when available; always include every errored sample.
+PER_MODEL_CAP = 4
+
+
+def _short_model(model: str) -> str:
+    return model.split("/")[-1]
+
+
+def _render_sample(sample, model: str) -> str:
+    lines = [
+        f"# Transcript: {sample.id} (epoch {sample.epoch})",
+        f"model: {model}",
+        f"score: {sample.scores}",
+        "",
+    ]
+    if sample.error:
+        lines.append(f"SAMPLE ERROR: {sample.error.message}")
+        lines.append("")
+    for msg in sample.messages:
+        role = msg.role
+        content = msg.text if hasattr(msg, "text") else str(msg.content)
+        lines.append(f"## {role}")
+        lines.append(content or "(empty)")
+        if getattr(msg, "tool_calls", None):
+            for tc in msg.tool_calls:
+                lines.append(f"[tool call] {tc.function}({tc.arguments})")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def export(log_dir: str, out_dir: str) -> None:
+    out = Path(out_dir)
+    (out / "transcripts").mkdir(parents=True, exist_ok=True)
+
+    def _numeric(s) -> float:
+        value = next(iter(s.scores.values())).value if s.scores else 0
+        return 1.0 if value == "C" else (0.0 if value == "I" else float(value))
+
+    kinds = [f"t{i}" for i in range(1, 11)]
+    summary_rows = []
+    perkind_rows = []
+    for info in list_eval_logs(log_dir):
+        log = read_eval_log(info.name)
+        model = log.eval.model
+        accuracy = None
+        if log.results:
+            for eval_score in log.results.scores:
+                for name, m in eval_score.metrics.items():
+                    if name == "accuracy":
+                        accuracy = m.value
+        n_samples = len(log.samples or [])
+        n_errors = sum(1 for smp in (log.samples or []) if smp.error)
+        epochs = log.eval.config.epochs or 1
+        summary_rows.append(
+            f"| {model} | {log.status} | "
+            f"{'n/a' if accuracy is None else f'{accuracy:.3f}'} | "
+            f"{n_samples} | {n_errors} | {epochs} |"
+        )
+
+        # Stratify by task kind so the reviewer sees every kind (especially
+        # the hard t5/t6/t7/t8), then prefer failures within each kind for the
+        # fairness check. One epoch per (kind) per model keeps the set small.
+        by_kind: dict[str, list] = defaultdict(list)
+        for s in log.samples or []:
+            kind = str(s.id).split("-")[0]
+            by_kind[kind].append(s)
+
+        # Per-kind mean (over all epochs/samples) so the reviewer can verify
+        # the difficulty-spread row without re-running anything.
+        means = {
+            k: sum(_numeric(s) for s in by_kind[k] if not s.error)
+            / max(1, sum(1 for s in by_kind[k] if not s.error))
+            for k in by_kind
+        }
+        cells = " | ".join(f"{means.get(k, float('nan')):.2f}" for k in kinds)
+        perkind_rows.append(f"| {_short_model(model)} | {cells} |")
+
+        def _is_failure(s) -> bool:
+            if s.error:
+                return True
+            value = next(iter(s.scores.values())).value if s.scores else "?"
+            return value not in ("C", 1.0)
+
+        for kind in sorted(by_kind):
+            samples = by_kind[kind]
+            # prefer a failing example for this kind; fall back to any
+            chosen = next((s for s in samples if _is_failure(s)), samples[0])
+            name = f"{_short_model(model)}__{chosen.id}__epoch{chosen.epoch}.md"
+            (out / "transcripts" / name).write_text(_render_sample(chosen, model))
+
+    perkind_header = "| model | " + " | ".join(kinds) + " |\n"
+    perkind_sep = "|---|" + "---|" * len(kinds) + "\n"
+    (out / "summary.md").write_text(
+        "# Run summary\n\n"
+        f"source: {log_dir}\n\n"
+        "| model | status | accuracy | samples | errors | epochs |\n"
+        "|---|---|---|---|---|---|\n" + "\n".join(summary_rows) + "\n\n"
+        "## Per-kind means (all epochs)\n\n"
+        + perkind_header
+        + perkind_sep
+        + "\n".join(perkind_rows)
+        + "\n"
+    )
+    n_transcripts = len(list((out / "transcripts").glob("*.md")))
+    print(f"exported {len(summary_rows)} runs, {n_transcripts} transcripts -> {out}")
+
+
+if __name__ == "__main__":
+    export(sys.argv[1], sys.argv[2])

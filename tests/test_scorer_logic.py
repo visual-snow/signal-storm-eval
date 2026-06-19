@@ -404,24 +404,128 @@ class TestT6Product:
 # --- t7/t8: sized recommendations graded against the live inequality ----------
 
 
-class TestT7Tlr:
-    def test_in_range_holding_load_scores_correct(self) -> None:
-        # peak 100, capacity 40: need >=60% reduction.
-        assert decide("t7", json.dumps({"tlr_percent": 70}), STORM_REC, STORM_LIVE).value == CORRECT
+class TestT7Worksheet:
+    def test_reference_scores_high(self) -> None:
+        c = json.dumps(
+            {
+                "peak_rate": 100,
+                "capacity_rate": 40,
+                "formula": "post_control_rate = peak_rate * (1 - tlr_percent/100)",
+                "tlr_percent": 60,
+                "post_control_rate": 40,
+            }
+        )
+        assert float(decide("t7", c, STORM_REC, STORM_LIVE).value) >= 0.95
 
-    def test_undersized_tlr_scores_incorrect(self) -> None:
-        assert decide("t7", json.dumps({"tlr_percent": 30}), STORM_REC, STORM_LIVE).value == INCORRECT
+    def test_near_miss_tlr_scores_high_partial(self) -> None:
+        c = json.dumps(
+            {
+                "peak_rate": 100,
+                "capacity_rate": 40,
+                "formula": "post_control_rate = peak_rate * (1 - tlr_percent/100)",
+                "tlr_percent": 55,
+                "post_control_rate": 45,
+            }
+        )
+        assert_score_between(decide("t7", c, STORM_REC, STORM_LIVE), 0.90, 0.99)
+
+    def test_safe_tlr_with_wrong_residual_scores_midrange(self) -> None:
+        c = json.dumps(
+            {
+                "peak_rate": 100,
+                "capacity_rate": 40,
+                "formula": "guess",
+                "tlr_percent": 70,
+                "post_control_rate": 10,
+            }
+        )
+        assert_score_between(decide("t7", c, STORM_REC, STORM_LIVE), 0.75, 0.85)
+
+    def test_correct_formula_with_wrong_peak_scores_midrange(self) -> None:
+        c = json.dumps(
+            {
+                "peak_rate": 80,
+                "capacity_rate": 40,
+                "formula": "post_control_rate = peak_rate * (1 - tlr_percent/100)",
+                "tlr_percent": 60,
+                "post_control_rate": 40,
+            }
+        )
+        assert_score_between(decide("t7", c, STORM_REC, STORM_LIVE), 0.80, 0.90)
+
+    def test_bad_tlr_worksheet_scores_low(self) -> None:
+        c = json.dumps(
+            {
+                "peak_rate": 0,
+                "capacity_rate": 0,
+                "formula": "",
+                "tlr_percent": 10,
+                "post_control_rate": 0,
+            }
+        )
+        assert_score_between(decide("t7", c, STORM_REC, STORM_LIVE), 0.0, 0.30)
 
 
-class TestT8Backoff:
-    def test_wide_enough_spread_scores_correct(self) -> None:
-        # 6000 rejected over a 200s spread = 30/s, within 40/s capacity.
-        c = json.dumps({"backoff_min": 0, "backoff_max": 200})
-        assert decide("t8", c, STORM_REC, STORM_LIVE).value == CORRECT
+class TestT8Worksheet:
+    def test_reference_scores_high(self) -> None:
+        c = json.dumps(
+            {
+                "deferred_volume": 6000,
+                "capacity_rate": 40,
+                "backoff_min": 0,
+                "backoff_max": 150,
+                "expected_retry_rate": 40,
+            }
+        )
+        assert float(decide("t8", c, STORM_REC, STORM_LIVE).value) >= 0.95
 
-    def test_zero_spread_scores_incorrect(self) -> None:
-        c = json.dumps({"backoff_min": 5, "backoff_max": 5})
-        assert decide("t8", c, STORM_REC, STORM_LIVE).value == INCORRECT
+    def test_too_narrow_spread_scores_high_partial(self) -> None:
+        c = json.dumps(
+            {
+                "deferred_volume": 6000,
+                "capacity_rate": 40,
+                "backoff_min": 0,
+                "backoff_max": 100,
+                "expected_retry_rate": 60,
+            }
+        )
+        assert_score_between(decide("t8", c, STORM_REC, STORM_LIVE), 0.85, 0.95)
+
+    def test_safe_spread_with_wrong_retry_rate_scores_partial(self) -> None:
+        c = json.dumps(
+            {
+                "deferred_volume": 6000,
+                "capacity_rate": 40,
+                "backoff_min": 0,
+                "backoff_max": 200,
+                "expected_retry_rate": 10,
+            }
+        )
+        assert_score_between(decide("t8", c, STORM_REC, STORM_LIVE), 0.75, 0.85)
+
+    def test_ordered_backoff_with_weak_measurements_scores_midrange(self) -> None:
+        c = json.dumps(
+            {
+                "deferred_volume": 3000,
+                "capacity_rate": 80,
+                "backoff_min": 0,
+                "backoff_max": 100,
+                "expected_retry_rate": 30,
+            }
+        )
+        assert_score_between(decide("t8", c, STORM_REC, STORM_LIVE), 0.55, 0.65)
+
+    def test_zero_spread_scores_low(self) -> None:
+        c = json.dumps(
+            {
+                "deferred_volume": 0,
+                "capacity_rate": 0,
+                "backoff_min": 5,
+                "backoff_max": 5,
+                "expected_retry_rate": 0,
+            }
+        )
+        assert_score_between(decide("t8", c, STORM_REC, STORM_LIVE), 0.0, 0.20)
 
 
 # --- t9/t10: negative cases, tristate verdict + live agreement ----------------

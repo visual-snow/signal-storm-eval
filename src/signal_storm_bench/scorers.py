@@ -28,14 +28,13 @@ from inspect_ai.scorer import (
 from inspect_ai.solver import TaskState
 
 from signal_storm_bench.logic import (
-    backoff_ok,
+    as_float,
     component_average,
     normalize_verdict,
     numeric_score,
     parse_submission,
     set_f1_score,
     term_coverage,
-    tlr_holds,
     verdict_in,
 )
 from signal_storm_bench.sandbox_ops import (
@@ -155,6 +154,21 @@ def _product_score(
         explanation=f"{kind} product score={score:.3f}; components={components}",
         metadata={"components": components},
     )
+
+
+def _required_tlr(live_peak_rate: float, capacity: float) -> float:
+    if live_peak_rate <= 0:
+        return 99.0
+    return max(1.0, min(99.0, (1 - capacity / live_peak_rate) * 100))
+
+
+def _tlr_safety_score(tlr: float | None, live_peak_rate: float, capacity: float) -> float:
+    if tlr is None or not 1 <= tlr <= 99:
+        return 0.0
+    required = _required_tlr(live_peak_rate, capacity)
+    if live_peak_rate * (1 - tlr / 100) <= capacity:
+        return 1.0
+    return numeric_score(tlr, required, error_scale=max(required, 1.0))
 
 
 def decide(kind: str, completion: str, record: dict, live: LiveState) -> Score:
@@ -357,36 +371,103 @@ def decide(kind: str, completion: str, record: dict, live: LiveState) -> Score:
         )
 
     if kind == "t7":
-        tlr = fields.get("tlr_percent")
-        ok = isinstance(tlr, (int, float)) and tlr_holds(
-            float(tlr), live.live_peak_rate, live.capacity_rate
+        tlr = as_float(fields.get("tlr_percent"))
+        post_expected = live.live_peak_rate * (1 - tlr / 100) if tlr is not None else 0.0
+        post_rate_score = numeric_score(
+            fields.get("post_control_rate"),
+            post_expected,
+            error_scale=max(live.capacity_rate * 0.25, 1.0),
         )
-        return Score(
-            value=CORRECT if ok else INCORRECT,
-            answer=str(tlr),
-            explanation=(
-                f"tlr_percent={tlr}, live_peak_rate={live.live_peak_rate}, "
-                f"capacity_rate={live.capacity_rate}"
+        formula_terms = term_coverage(
+            fields.get("formula"), {"post control rate", "peak rate", "tlr percent"}
+        )
+        components = {
+            "peak_measurement": numeric_score(
+                fields.get("peak_rate"),
+                live.live_peak_rate,
+                max(live.live_peak_rate * 0.25, 1.0),
             ),
+            "capacity_measurement": numeric_score(
+                fields.get("capacity_rate"),
+                live.capacity_rate,
+                max(live.capacity_rate * 0.25, 1.0),
+            ),
+            "formula_consistency": (formula_terms + post_rate_score) / 2,
+            "tlr_safety": _tlr_safety_score(tlr, live.live_peak_rate, live.capacity_rate),
+            "range_sanity": 1.0 if tlr is not None and 1 <= tlr <= 99 else 0.0,
+        }
+        return _product_score(
+            "t7",
+            fields,
+            components,
+            {
+                "peak_measurement": 0.20,
+                "capacity_measurement": 0.20,
+                "formula_consistency": 0.20,
+                "tlr_safety": 0.30,
+                "range_sanity": 0.10,
+            },
         )
 
     if kind == "t8":
-        bmin = fields.get("backoff_min")
-        bmax = fields.get("backoff_max")
-        ok = (
-            isinstance(bmin, (int, float))
-            and isinstance(bmax, (int, float))
-            and backoff_ok(
-                float(bmin), float(bmax), live.rejected_volume, live.capacity_rate
-            )
+        deferred_volume = fields.get("deferred_volume", fields.get("deficit"))
+        capacity = fields.get("capacity_rate")
+        bmin = as_float(fields.get("backoff_min"))
+        bmax = as_float(fields.get("backoff_max"))
+        expected_retry_rate = fields.get("expected_retry_rate")
+        spread = bmax - bmin if bmin is not None and bmax is not None else 0.0
+        submitted_deferred = as_float(deferred_volume)
+        submitted_capacity = as_float(capacity)
+        submitted_retry_rate = (
+            submitted_deferred / spread
+            if submitted_deferred is not None and spread > 0
+            else None
         )
-        return Score(
-            value=CORRECT if ok else INCORRECT,
-            answer=f"[{bmin}, {bmax}]",
-            explanation=(
-                f"backoff=[{bmin}, {bmax}], rejected_volume={live.rejected_volume}, "
-                f"capacity_rate={live.capacity_rate}"
+        required_spread = (
+            live.rejected_volume / live.capacity_rate if live.capacity_rate > 0 else 0.0
+        )
+        expected_retry_score = (
+            numeric_score(
+                expected_retry_rate,
+                submitted_retry_rate,
+                error_scale=max((submitted_capacity or live.capacity_rate) * 0.25, 1.0),
+            )
+            if submitted_retry_rate is not None
+            else 0.0
+        )
+        expected_value = as_float(expected_retry_rate)
+        if spread <= 0:
+            backoff_safety = 0.0
+        elif submitted_capacity is not None and expected_value is not None and expected_value <= submitted_capacity:
+            backoff_safety = 1.0
+        else:
+            backoff_safety = numeric_score(
+                spread, required_spread, error_scale=max(required_spread, 1.0)
+            )
+        components = {
+            "deferred_volume": numeric_score(
+                deferred_volume,
+                live.rejected_volume,
+                max(live.rejected_volume * 0.10, 1.0),
             ),
+            "capacity_measurement": numeric_score(
+                capacity, live.capacity_rate, max(live.capacity_rate * 0.25, 1.0)
+            ),
+            "spread_order_sanity": 1.0 if spread > 0 else 0.0,
+            "expected_retry_rate": expected_retry_score,
+            "backoff_safety": backoff_safety,
+        }
+        return _product_score(
+            "t8",
+            fields,
+            components,
+            {
+                "deferred_volume": 0.20,
+                "capacity_measurement": 0.20,
+                "spread_order_sanity": 0.15,
+                "expected_retry_rate": 0.20,
+                "backoff_safety": 0.25,
+            },
         )
 
     if kind == "t9":

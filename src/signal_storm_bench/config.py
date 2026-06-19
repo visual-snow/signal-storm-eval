@@ -60,16 +60,29 @@ TLR_MAX = 99
 # verdict is that it fails to hold the load.
 GIVEN_TLR = 10
 
-# The ten tasks, in operator-loop order: characterise (t1-t4), recommend
-# (t5-t8), verify (t9-t10).
-KINDS = ("t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10")
+# The four investigation tasks, in operator-loop order: measure the storm (i1),
+# diagnose the load state (i2, run in both the storm and baseline worlds), select
+# the flow-control mechanism + overload action (i3), size the NAS back-off (i4).
+# The culminating apply-and-verify TLR task (P1) is built in a separate plan.
+KINDS = ("i1", "i2", "i3", "i4")
 
-# t5 candidate mechanisms shown to the model. Safe in the prompt: the candidate
-# list is published neutrally; which one is the distractor is the hidden part.
-T5_CANDIDATES = (
+# i2 runs as two samples from one identity: a storm world (correct verdict:
+# overloaded) and a baseline world (correct verdict: normal). The agent does not
+# know which world it is in; it must read the live state.
+I2_WORLDS = ("storm", "baseline")
+
+# i3 candidate mechanisms shown to the model, published neutrally. Which are the
+# genuine overload-control mechanisms and which are distractors is the hidden part
+# (the ANSWER KEY below). Expanded past a 2-of-3 list so the pick is not guessable.
+# Grounding to verify against TS 38.413 / TS 23.501 / TS 24.501 before calibration
+# (see docs/grounding/normative-sources.md); these are the working set.
+I3_CANDIDATES = (
     "NGAP Overload Start",
     "Traffic Load Reduction Indication",
+    "NAS congestion control back-off",
     "AMF load-balancing Weight Factor",
+    "RACH back-off (RAN admission)",
+    "SMF Session-AMBR throttling",
 )
 
 

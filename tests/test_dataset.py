@@ -20,7 +20,7 @@ from signal_storm_bench.config import (
 )
 from signal_storm_bench.dataset import build_samples
 
-ALL_KINDS = ("t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10")
+ALL_KINDS = ("i1", "i2", "i3", "i4")
 
 # Prometheus series the agent must discover for itself; never named in a prompt.
 _METRIC_NAMES = (

@@ -35,7 +35,6 @@ from signal_storm_bench.logic import (
     parse_submission,
     set_f1_score,
     term_coverage,
-    verdict_in,
 )
 from signal_storm_bench.sandbox_ops import (
     capacity_rate,
@@ -169,6 +168,23 @@ def _tlr_safety_score(tlr: float | None, live_peak_rate: float, capacity: float)
     if live_peak_rate * (1 - tlr / 100) <= capacity:
         return 1.0
     return numeric_score(tlr, required, error_scale=max(required, 1.0))
+
+
+def _unsafe_control_recommendation(text: object) -> bool:
+    normalized = normalize_verdict(str(text))
+    if not normalized:
+        return False
+    if _text_matches_any(normalized, _T10_NO_CONTROL):
+        return False
+    unsafe_terms = {
+        "apply",
+        "traffic load reduction",
+        "flow control needed",
+        "control needed",
+        "flow control required",
+        "control required",
+    }
+    return any(term in normalized for term in unsafe_terms)
 
 
 def decide(kind: str, completion: str, record: dict, live: LiveState) -> Score:
@@ -471,37 +487,89 @@ def decide(kind: str, completion: str, record: dict, live: LiveState) -> Score:
         )
 
     if kind == "t9":
-        # Negative case: pass only by judging the undersized TLR ineffective AND
-        # the live state agreeing it still exceeds capacity. Unclear -> None -> fail.
-        verdict_ok = verdict_in(_T9_FAILS, completion)
         given_tlr = record["given_tlr"]
-        live_fails = live.live_peak_rate * (1 - given_tlr / 100) > live.capacity_rate
-        ok = verdict_ok is True and live_fails
-        return Score(
-            value=CORRECT if ok else INCORRECT,
-            answer=fields.get("verdict"),
-            explanation=(
-                f"verdict_ineffective={verdict_ok}, given_tlr={given_tlr}, "
-                f"live_peak_rate={live.live_peak_rate}, capacity_rate={live.capacity_rate}, "
-                f"live_fails={live_fails}"
+        residual_rate = live.live_peak_rate * (1 - given_tlr / 100)
+        peak_score = numeric_score(
+            fields.get("peak_rate"),
+            live.live_peak_rate,
+            max(live.live_peak_rate * 0.25, 1.0),
+        )
+        capacity_score = numeric_score(
+            fields.get("capacity_rate"),
+            live.capacity_rate,
+            max(live.capacity_rate * 0.25, 1.0),
+        )
+        components = {
+            "given_tlr": numeric_score(
+                fields.get("given_tlr_percent", fields.get("tlr_percent")),
+                given_tlr,
+                error_scale=1.0,
             ),
+            "peak_capacity_measurements": (peak_score + capacity_score) / 2,
+            "residual_rate": numeric_score(
+                fields.get("residual_rate"),
+                residual_rate,
+                error_scale=max(live.capacity_rate * 0.25, 1.0),
+            ),
+            "verdict": 1.0 if _text_matches_any(fields.get("verdict"), _T9_FAILS) else 0.0,
+            "evidence": term_coverage(
+                fields.get("evidence"), {"tlr", "residual", "capacity"}
+            ),
+        }
+        return _product_score(
+            "t9",
+            fields,
+            components,
+            {
+                "given_tlr": 0.05,
+                "peak_capacity_measurements": 0.25,
+                "residual_rate": 0.25,
+                "verdict": 0.30,
+                "evidence": 0.15,
+            },
         )
 
     if kind == "t10":
-        # Negative case: pass only by judging no control needed AND the live
-        # baseline confirming low load. Unclear -> None -> fail.
-        verdict_ok = _text_matches_any(
-            fields.get("verdict", fields.get("recommendation")), _T10_NO_CONTROL
-        )
-        below_idle = live.baseline_peak_rate < _IDLE_PEAK_THRESHOLD
-        ok = verdict_ok is True and below_idle
-        return Score(
-            value=CORRECT if ok else INCORRECT,
-            answer=fields.get("verdict"),
-            explanation=(
-                f"verdict_no_control={verdict_ok}, "
-                f"baseline_peak_rate={live.baseline_peak_rate}, below_idle={below_idle}"
+        recommendation = fields.get("recommendation", fields.get("verdict"))
+        unsafe_recommendation = _unsafe_control_recommendation(recommendation)
+        baseline_deficit = max(live.rejected_volume, 0.0)
+        components = {
+            "baseline_peak": numeric_score(
+                fields.get("peak_rate"),
+                live.baseline_peak_rate,
+                error_scale=max(_IDLE_PEAK_THRESHOLD, 1.0),
             ),
+            "deficit": numeric_score(
+                fields.get("deficit"),
+                baseline_deficit,
+                error_scale=max(abs(baseline_deficit) * 0.10, 1.0),
+            ),
+            "no_action_recommendation": 1.0
+            if _text_matches_any(recommendation, _T10_NO_CONTROL)
+            else 0.0,
+            "evidence": 0.0
+            if unsafe_recommendation
+            else term_coverage(fields.get("evidence"), {"idle", "below", "deficit"}),
+        }
+        score = component_average(
+            components,
+            {
+                "baseline_peak": 0.35,
+                "deficit": 0.20,
+                "no_action_recommendation": 0.30,
+                "evidence": 0.15,
+            },
+        )
+        if unsafe_recommendation:
+            score = min(score, 0.25)
+        return Score(
+            value=score,
+            answer=json.dumps(fields, sort_keys=True),
+            explanation=f"t10 product score={score:.3f}; components={components}",
+            metadata={
+                "components": components,
+                "unsafe_recommendation": unsafe_recommendation,
+            },
         )
 
     raise ValueError(f"unknown task kind: {kind}")
@@ -518,7 +586,8 @@ async def _gather_live_state(kind: str, record: dict) -> LiveState:
                 baseline["storm_interval"],
                 baseline["peak_window"],
                 baseline["scrape_interval_s"],
-            )
+            ),
+            rejected_volume=await rejected_volume(baseline["storm_interval"]),
         )
 
     storm = record["storm"]

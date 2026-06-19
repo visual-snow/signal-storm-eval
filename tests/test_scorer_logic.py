@@ -531,97 +531,111 @@ class TestT8Worksheet:
 # --- t9/t10: negative cases, tristate verdict + live agreement ----------------
 
 
-class TestT9UndersizedTlr:
-    def test_ineffective_verdict_with_live_agreeing_scores_correct(self) -> None:
-        # given_tlr 10: 100 * 0.9 = 90 > 40 capacity, so it genuinely fails.
-        c = json.dumps({"verdict": "the proposed setting is ineffective"})
-        assert decide("t9", c, T9_REC, STORM_LIVE).value == CORRECT
-
-    def test_says_it_works_scores_incorrect(self) -> None:
-        c = json.dumps({"verdict": "this holds the load fine"})
-        assert decide("t9", c, T9_REC, STORM_LIVE).value == INCORRECT
-
-    def test_unclear_verdict_never_correct(self) -> None:
-        assert decide("t9", "hard to say", T9_REC, STORM_LIVE).value == INCORRECT
-
-    # Regression: real model phrasings the original narrow set wrongly rejected.
-    @pytest.mark.parametrize(
-        "verdict",
-        [
-            pytest.param("No. The 10% Traffic Load Reduction is insufficient.", id="insufficient"),
-            pytest.param("not sufficient", id="not_sufficient"),
-            pytest.param("a 10% reduction will not hold the load", id="will_not_hold"),
-            pytest.param("the offered rate is not capped by 10%", id="not_capped"),
-        ],
-    )
-    def test_real_ineffective_phrasings_score_correct(self, verdict: str) -> None:
-        c = json.dumps({"verdict": verdict})
-        assert decide("t9", c, T9_REC, STORM_LIVE).value == CORRECT
-
-    # Precision: opposite-polarity answers (the TLR works) must still fail.
-    @pytest.mark.parametrize(
-        "verdict",
-        [
-            pytest.param("the 10% TLR is sufficient and the AMF is no longer overloaded", id="sufficient"),
-            pytest.param("this caps offered load below capacity, load is held", id="caps_held"),
-        ],
-    )
-    def test_says_it_works_variants_score_incorrect(self, verdict: str) -> None:
-        c = json.dumps({"verdict": verdict})
-        assert decide("t9", c, T9_REC, STORM_LIVE).value == INCORRECT
-
-
-class TestT10Baseline:
-    def test_no_control_verdict_with_idle_live_scores_correct(self) -> None:
-        c = json.dumps({"verdict": "no control needed"})
-        assert decide("t10", c, BASELINE_REC, IDLE_LIVE).value == CORRECT
-
-    def test_accepts_recommendation_during_migration(self) -> None:
+class TestT9VerificationMemo:
+    def test_reference_scores_high(self) -> None:
         c = json.dumps(
             {
-                "recommendation": "no flow control needed",
-                "peak_rate": 0,
-                "deficit": 0,
-                "evidence": "idle",
+                "given_tlr_percent": 10,
+                "peak_rate": 100,
+                "capacity_rate": 40,
+                "residual_rate": 90,
+                "verdict": "the proposed setting is ineffective",
+                "evidence": "10% TLR leaves residual load 90 above capacity 40.",
             }
         )
-        assert decide("t10", c, BASELINE_REC, IDLE_LIVE).value == CORRECT
+        assert float(decide("t9", c, T9_REC, STORM_LIVE).value) >= 0.95
 
-    def test_recommending_control_scores_incorrect(self) -> None:
-        c = json.dumps({"verdict": "apply traffic load reduction now"})
-        assert decide("t10", c, BASELINE_REC, IDLE_LIVE).value == INCORRECT
+    def test_verdict_only_scores_low(self) -> None:
+        c = json.dumps({"verdict": "insufficient"})
+        assert_score_between(decide("t9", c, T9_REC, STORM_LIVE), 0.25, 0.35)
 
-    def test_unclear_verdict_never_correct(self) -> None:
-        assert decide("t10", "not sure", BASELINE_REC, IDLE_LIVE).value == INCORRECT
+    def test_correct_measurements_with_wrong_residual_scores_partial(self) -> None:
+        c = json.dumps(
+            {
+                "given_tlr_percent": 10,
+                "peak_rate": 100,
+                "capacity_rate": 40,
+                "residual_rate": 50,
+                "verdict": "ineffective",
+                "evidence": "TLR residual load still exceeds capacity.",
+            }
+        )
+        assert_score_between(decide("t9", c, T9_REC, STORM_LIVE), 0.70, 0.80)
 
-    # Regression: every roster model said "no flow control needed"; the original
-    # set required the exact "no control needed" and rejected all six.
-    @pytest.mark.parametrize(
-        "verdict",
-        [
-            pytest.param("no flow control needed", id="plain"),
-            pytest.param("no_flow_control_needed", id="underscored"),
-            pytest.param("No flow control is needed. All AMF counters are 0.", id="is_needed_longform"),
-            pytest.param("Flow control is not required at this time.", id="not_required"),
-            pytest.param("no flow control required", id="no_flow_control_required"),
-        ],
-    )
-    def test_real_no_control_phrasings_score_correct(self, verdict: str) -> None:
-        c = json.dumps({"verdict": verdict})
-        assert decide("t10", c, BASELINE_REC, IDLE_LIVE).value == CORRECT
+    def test_correct_residual_with_wrong_verdict_scores_midrange(self) -> None:
+        c = json.dumps(
+            {
+                "given_tlr_percent": 10,
+                "peak_rate": 100,
+                "capacity_rate": 40,
+                "residual_rate": 90,
+                "verdict": "this holds the load fine",
+                "evidence": "TLR residual load remains above capacity.",
+            }
+        )
+        assert_score_between(decide("t9", c, T9_REC, STORM_LIVE), 0.60, 0.75)
 
-    # Precision: recommending control (incl. "no flow control configured, add it")
-    # must still fail; that is why bare "no flow control" is not a synonym.
-    @pytest.mark.parametrize(
-        "verdict",
-        [
-            pytest.param("flow control is needed; apply a Traffic Load Reduction", id="needed_apply"),
-            pytest.param("there is no flow control configured, so we should add it", id="configured_add_it"),
-        ],
-    )
-    def test_recommending_control_variants_score_incorrect(self, verdict: str) -> None:
-        c = json.dumps({"verdict": verdict})
-        assert decide("t10", c, BASELINE_REC, IDLE_LIVE).value == INCORRECT
+    def test_bad_artifact_scores_low(self) -> None:
+        c = json.dumps(
+            {
+                "given_tlr_percent": 10,
+                "peak_rate": 0,
+                "capacity_rate": 0,
+                "residual_rate": 0,
+                "verdict": "sufficient",
+                "evidence": "works",
+            }
+        )
+        assert_score_between(decide("t9", c, T9_REC, STORM_LIVE), 0.0, 0.15)
+
+
+class TestT10BaselineAssessment:
+    def test_reference_scores_high(self) -> None:
+        c = json.dumps(
+            {
+                "peak_rate": 0,
+                "deficit": 0,
+                "recommendation": "no flow control needed",
+                "evidence": "idle baseline below threshold with no deficit",
+            }
+        )
+        assert float(decide("t10", c, BASELINE_REC, IDLE_LIVE).value) >= 0.95
+
+    def test_recommendation_only_scores_low(self) -> None:
+        c = json.dumps({"recommendation": "no flow control required"})
+        assert_score_between(decide("t10", c, BASELINE_REC, IDLE_LIVE), 0.25, 0.35)
+
+    def test_correct_peak_with_missing_deficit_scores_partial(self) -> None:
+        c = json.dumps(
+            {
+                "peak_rate": 0,
+                "recommendation": "no flow control needed",
+                "evidence": "",
+            }
+        )
+        assert_score_between(decide("t10", c, BASELINE_REC, IDLE_LIVE), 0.60, 0.70)
+
+    def test_unsafe_recommendation_with_evidence_scores_low(self) -> None:
+        c = json.dumps(
+            {
+                "peak_rate": 0,
+                "deficit": 0,
+                "recommendation": "apply flow control",
+                "evidence": "idle baseline below threshold with no deficit",
+            }
+        )
+        assert_score_between(decide("t10", c, BASELINE_REC, IDLE_LIVE), 0.0, 0.30)
+
+    def test_bad_artifact_scores_low(self) -> None:
+        c = json.dumps(
+            {
+                "peak_rate": 100,
+                "deficit": 6000,
+                "recommendation": "apply traffic load reduction now",
+                "evidence": "storm",
+            }
+        )
+        assert_score_between(decide("t10", c, BASELINE_REC, IDLE_LIVE), 0.0, 0.20)
 
 
 # --- cross-cutting: unparseable never errors, unknown kind raises -------------

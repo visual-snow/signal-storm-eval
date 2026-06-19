@@ -52,6 +52,18 @@ def test_prompts_never_leak_metric_or_answer():
         assert "distractor" not in prompt
 
 
+def test_metadata_carries_world_and_correct_knobs():
+    for s in build_samples():
+        metadata = _metadata(s)
+        world = metadata["world"]
+        assert world in ("storm", "baseline")
+        windows = metadata["storm"] if world == "storm" else metadata["baseline"]
+        assert windows["storm_interval"] and windows["peak_window"]
+        assert windows["scrape_interval_s"] > 0
+        if metadata["task_kind"] == "i2":
+            assert metadata["expected_state"] in ("overloaded", "normal")
+
+
 def test_prompts_render_format_escapes():
     for s in build_samples():
         prompt = _prompt(s)
@@ -59,6 +71,7 @@ def test_prompts_render_format_escapes():
 
 
 def test_prompts_request_product_artifacts():
+    # Both i2 samples share one prompt template, so collapsing by task_kind is safe.
     by_kind = {_metadata(s)["task_kind"]: s for s in build_samples()}
     expected_fields = {
         "i1": ["request_count", "peak_rate", "success_count", "deficit"],

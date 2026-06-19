@@ -18,13 +18,15 @@ build-loop memory.
 - Scoring cleanup: BUILT for local scorer validation. Reference, bad, and three
   partial artifacts per task are tested in `tests/test_scorer_logic.py`, and
   `docs/product-score-calibration.md` records offline per-task score spread.
-- Results: Product-scored live/model calibration is still pending. Historical
+- Results: Product-scored live smoke has passed; full model-roster calibration
+  is still pending. Historical
   `logs/p5` and `logs/p5b` predate product prompts; their successful saved
   completions have been rescored with the current product scorer in
-  `docs/saved-log-product-calibration.md`, but fresh product-prompt logs are
-  still needed for current capability evidence. Use
-  `scripts/run_product_smoke.sh` for the next live smoke; it cleans up
-  interrupted `inspect-signal_storm-*` containers.
+  `docs/saved-log-product-calibration.md`. The fresh smoke log
+  `logs/product-smoke/2026-06-19T15-19-38-00-00_signal-storm_3hsWR5QsWi6CpWhcHyhhSb.eval`
+  has status `success`, score `0.648`, and component metadata. Fresh
+  product-prompt roster logs are still needed for current multi-model
+  capability evidence.
 
 ## House-style template
 
@@ -70,16 +72,16 @@ Keyed to `EVALUATION_CHECKLIST.md`. Status: DONE / WIP / TODO / BLOCKED.
 
 | Checklist item | Status | Note |
 |---|---|---|
-| Eval runs with `inspect eval ... --limit 1` | WIP | old binary-scored smoke exists; fresh product-scored smoke pending through `scripts/run_product_smoke.sh` |
-| Trajectory analysis on a small run | TODO | after fresh product smoke |
-| Manually examined checks (best practices) | WIP | cleanup docs and scorer anchors reviewed; fresh transcript review pending |
+| Eval runs with `inspect eval ... --limit 1` | DONE | fresh product-scored smoke passed via `scripts/run_product_smoke.sh`; cleanup removed sandboxes |
+| Trajectory analysis on a small run | WIP | product-smoke transcript/export reviewed for t1; full roster transcript review pending |
+| Manually examined checks (best practices) | WIP | cleanup docs, scorer anchors, saved-log calibration, and product-smoke transcript reviewed; full roster review pending |
 | Name validity | DONE | `signal_storm_bench` matches the use case |
 | Dataset validity (each sample passable and failable) | DONE | product prompts plus reference/bad/partial scorer anchors for t1..t10 |
-| Scoring validity (measures completion, not a proxy) | WIP | numeric product scorers, scorer-anchor calibration, and saved-log rescoring pass; live product smoke pending |
+| Scoring validity (measures completion, not a proxy) | WIP | numeric product scorers, scorer-anchor calibration, saved-log rescoring, and product-smoke scoring pass; full roster review pending |
 | Evaluation report, two or more models | TODO | needs fresh product-scored roster |
 | `report_config.yaml` committed | TODO | P5 |
 | Code quality, lint, types | DONE | `ruff check`, `ruff format --check`, and `mypy src tests` pass after saved-log calibration |
-| Unit tests (solvers, scorers, tools) | DONE | full pytest passed during product cleanup; latest safe broad non-Docker slice passed with `214 passed, 4 skipped, 2 deselected` |
+| Unit tests (solvers, scorers, tools) | DONE | full pytest passed during product cleanup; latest safe broad non-Docker slice passed with `218 passed, 4 skipped, 2 deselected` |
 | End-to-end tests per variant | TODO | P6 |
 | Pytest marks (docker / k8s) | TODO | P6 |
 | Licensing and attribution (NOTICE) | TODO | vendored env provenance, P0 and P6 |

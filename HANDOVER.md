@@ -17,6 +17,12 @@ prompts; their binary scores should not be used as current capability evidence,
 but their successful saved completions have been rescored with the current
 product scorer in `docs/saved-log-product-calibration.md`.
 
+A fresh guarded product smoke passed on 2026-06-19:
+`logs/product-smoke/2026-06-19T15-19-38-00-00_signal-storm_3hsWR5QsWi6CpWhcHyhhSb.eval`
+has status `success`, score `0.648`, and product component metadata. The older
+product-smoke infra-error log is retained only as infrastructure history and is
+skipped by the result scripts.
+
 ## What is solid
 
 - `src/signal_storm_bench/topology/compose.yaml` boots a local Open5GS AIO,
@@ -39,10 +45,10 @@ product scorer in `docs/saved-log-product-calibration.md`.
 - Verbatim 3GPP excerpts in `docs/grounding/normative-sources.md` are still
   placeholders. The bounds and section citations are recorded, but an offline
   reviewer cannot yet compare exact source text.
-- Fresh product-scored model calibration is still needed. Current offline
-  calibration evidence is the scorer anchor test set plus saved-log rescoring
-  of old successful trajectories; a product-prompt roster run with epochs >= 3
-  is still needed for pass^k and differentiation.
+- Fresh product-scored roster calibration is still needed. Current calibration
+  evidence is the scorer anchor test set, saved-log rescoring of old successful
+  trajectories, and the one-sample product smoke; a product-prompt roster run
+  with epochs >= 3 is still needed for pass^k and differentiation.
 - t7 and t8 are intentionally component-scored because they combine measurement
   and sizing. If fresh transcripts show mixed failure modes that are hard to
   interpret, split them into narrower samples.

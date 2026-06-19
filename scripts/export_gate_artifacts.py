@@ -14,8 +14,9 @@ from pathlib import Path
 
 from inspect_ai.log import list_eval_logs, read_eval_log
 
-# Sampling policy: per model, export one correct and one incorrect/errored
-# sample transcript when available; always include every errored sample.
+# Sampling policy: per model, export one scored model-output transcript per kind,
+# preferring low scores when available. Infrastructure/sample errors stay in the
+# run summary; they are not sampled as model failures.
 PER_MODEL_CAP = 4
 PRODUCT_PASS_THRESHOLD = 0.8
 
@@ -75,12 +76,34 @@ def _metric_value(metrics: dict) -> float | None:
     return None
 
 
+def _score_value(sample) -> object | None:
+    if not sample.scores:
+        return None
+    return next(iter(sample.scores.values())).value
+
+
+def select_transcript_sample(samples: list) -> object | None:
+    scored_samples = [sample for sample in samples if not sample.error]
+    if not scored_samples:
+        return None
+    return next(
+        (
+            sample
+            for sample in scored_samples
+            if (value := _score_value(sample)) is not None and is_low_score(value)
+        ),
+        scored_samples[0],
+    )
+
+
 def export(log_dir: str, out_dir: str) -> None:
     out = Path(out_dir)
     (out / "transcripts").mkdir(parents=True, exist_ok=True)
 
     def _numeric(s) -> float:
-        value = next(iter(s.scores.values())).value if s.scores else 0
+        value = _score_value(s)
+        if value is None:
+            return float("nan")
         return _numeric_value(value)
 
     kinds = [f"t{i}" for i in range(1, 11)]
@@ -115,24 +138,21 @@ def export(log_dir: str, out_dir: str) -> None:
 
         # Per-kind mean (over all epochs/samples) so the reviewer can verify
         # the difficulty-spread row without re-running anything.
-        means = {
-            k: sum(_numeric(s) for s in by_kind[k] if not s.error)
-            / max(1, sum(1 for s in by_kind[k] if not s.error))
-            for k in by_kind
-        }
+        means = {}
+        for k in by_kind:
+            scored = [
+                s for s in by_kind[k] if not s.error and _score_value(s) is not None
+            ]
+            if scored:
+                means[k] = sum(_numeric(s) for s in scored) / len(scored)
         cells = " | ".join(f"{means.get(k, float('nan')):.2f}" for k in kinds)
         perkind_rows.append(f"| {_short_model(model)} | {cells} |")
 
-        def _is_failure(s) -> bool:
-            if s.error:
-                return True
-            value = next(iter(s.scores.values())).value if s.scores else "?"
-            return is_low_score(value)
-
         for kind in sorted(by_kind):
             samples = by_kind[kind]
-            # prefer a failing example for this kind; fall back to any
-            chosen = next((s for s in samples if _is_failure(s)), samples[0])
+            chosen = select_transcript_sample(samples)
+            if chosen is None:
+                continue
             name = f"{_short_model(model)}__{chosen.id}__epoch{chosen.epoch}.md"
             (out / "transcripts" / name).write_text(_render_sample(chosen, model))
 

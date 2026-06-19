@@ -97,9 +97,15 @@ available model outputs, while documenting that old prompt schemas cap many
 scores below reference quality. Samples without enough legacy live references
 are omitted rather than counted as model failures.
 
-A fresh product smoke/calibration run should write to `logs/product-smoke` and
-then the differentiation scripts above can generate product-prompt numeric
-model-output summaries.
+The guarded product smoke wrote a fresh product-scored success log to
+`logs/product-smoke/2026-06-19T15-19-38-00-00_signal-storm_3hsWR5QsWi6CpWhcHyhhSb.eval`
+with numeric score `0.648` and component metadata. The differentiation scripts
+parse `logs/product-smoke`: `pass_hat_k.py` reports the one sample below the
+0.8 pass threshold, `check_differentiation.py` fails only because a smoke has
+one successful model instead of the five-model roster, and
+`export_gate_artifacts.py` exports the numeric low-score transcript while
+keeping the older infrastructure-error log out of model-failure transcript
+sampling.
 
 Live smoke should be run through `scripts/run_product_smoke.sh`, which installs
 a cleanup trap for interrupted docker sandboxes. If a run is manually stopped,
@@ -113,8 +119,8 @@ a cleanup trap for interrupted docker sandboxes. If a run is manually stopped,
   reviewer cannot yet verify exact source text.
 - Full product-prompt roster calibration across model outputs is still
   budget-dependent. Until a fresh product-scored roster exists, calibration
-  evidence is the local anchor distribution plus saved-log rescoring of old
-  successful trajectories.
+  evidence is the local anchor distribution, saved-log rescoring of old
+  successful trajectories, and the one-sample product smoke.
 - t5/t6 remain sensitive to terminology. The scorer now grades components and
   phrase-boundary term coverage over product fields instead of exact strings,
   but synonym coverage should be checked against fresh transcripts.

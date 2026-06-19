@@ -16,11 +16,11 @@ because the implementation is ready.
 | Reference, bad, and at least three partial artifacts per task | Met | `tests/test_scorer_logic.py`; summarized by `docs/product-score-calibration.md`. |
 | Partial scores are meaningfully ordered and not just buckets | Met | `tests/test_product_calibration_report.py` requires five anchors, high reference, low bad, and at least four distinct scores per task. |
 | Inspect metrics use numeric scoring | Met | `src/signal_storm_bench/scorers.py` uses `mean()` and `stderr()`. |
-| Result scripts parse numeric scores | Met | `tests/test_differentiation.py`, `tests/test_kind_differentiation.py`, `tests/test_pass_hat_k.py`, and `tests/test_export_gate_artifacts.py`. |
+| Result scripts parse numeric scores | Met | `tests/test_differentiation.py`, `tests/test_kind_differentiation.py`, `tests/test_pass_hat_k.py`, and `tests/test_export_gate_artifacts.py`. Product-smoke scripts parsed numeric score `0.648`; `export_gate_artifacts.py` keeps infra-error runs out of low-score transcript sampling. |
 | No scorer relies on fragile substring matching unless the string is itself product evidence | Met | Numeric/set scorers dominate. Product-text components use normalized phrase-boundary matching over submitted artifact fields; `tests/test_logic.py::test_term_coverage_uses_token_boundaries` pins the boundary behavior. |
-| `uv run pytest` passes | Met for latest full run; broad non-Docker slice rechecked | Full suite passed earlier in cleanup (`199 passed, 1 skipped`). Latest safe broad slice passed with `RUN_DATASET_DOWNLOAD_TESTS=0 uv run --no-sync pytest -m 'not docker and not slow' -q` (`214 passed, 4 skipped, 2 deselected`). |
+| `uv run pytest` passes | Met for latest full run; broad non-Docker slice rechecked | Full suite passed earlier in cleanup (`199 passed, 1 skipped`). Latest safe broad slice passed with `RUN_DATASET_DOWNLOAD_TESTS=0 uv run --no-sync pytest -m 'not docker and not slow' -q` (`218 passed, 4 skipped, 2 deselected`). |
 | Ruff and mypy pass | Met | Latest `ruff check .`, `ruff format --check`, and `mypy src tests` passed after saved-log calibration. |
-| Smoke eval runs without infra failures counted as model failures | Pending | Product smoke was intentionally paused after laptop load. Use `scripts/run_product_smoke.sh` when Docker use is safe. |
+| Smoke eval runs without infra failures counted as model failures | Met | `scripts/run_product_smoke.sh openrouter/anthropic/claude-haiku-4.5` completed on 2026-06-19 with log `logs/product-smoke/2026-06-19T15-19-38-00-00_signal-storm_3hsWR5QsWi6CpWhcHyhhSb.eval`, status `success`, sample error `None`, numeric score `0.648`, and component metadata. The earlier product-smoke infra-error log remains skipped by result scripts. |
 | Local calibration report shows per-task score distributions | Met for scorer anchors and saved trajectories | `docs/product-score-calibration.md` shows per-task reference/partial/bad score spread without Docker/model calls. `docs/saved-log-product-calibration.md` rescored available saved trajectories with the current product scorer. |
 | Calibration across product-scored model outputs or saved trajectories | Met for saved trajectories, pending for fresh product-prompt roster | `docs/saved-log-product-calibration.md` uses successful `logs/p5`/`logs/p5b` trajectories. These logs predate product prompts, so they are evidence of scorer separation over available model outputs, not a replacement for a fresh product-scored roster. |
 | Cleanup doc records retained/dropped rationale, formulas, grounding, anchors, risks | Met | `docs/product-based-signal-storm-cleanup.md` and this audit. |
@@ -33,17 +33,22 @@ This is safe to run without Docker/model calls:
 uv run python scripts/generate_saved_log_calibration_report.py docs/saved-log-product-calibration.md logs/p5 logs/p5b
 ```
 
-## Pending Live Commands
-
-Run only when Docker/model use is acceptable:
+## Completed Smoke Evidence
 
 ```bash
 scripts/run_product_smoke.sh openrouter/anthropic/claude-haiku-4.5
-uv run python scripts/check_differentiation.py logs/product-smoke
 uv run python scripts/pass_hat_k.py logs/product-smoke
+uv run python scripts/check_differentiation.py logs/product-smoke
+uv run python scripts/export_gate_artifacts.py logs/product-smoke gate_exports/product-smoke
 ```
 
-Full roster calibration remains budget/runtime gated:
+`check_differentiation.py` correctly failed the one-model smoke with
+`only 1 of 5 models produced a successful run`; this is a roster-size failure,
+not an infrastructure failure.
+
+## Pending Live Commands
+
+Run only when Docker/model use is acceptable:
 
 ```bash
 MAX_SANDBOXES=1 bash scripts/run_iteration.sh product-p1 3

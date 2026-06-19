@@ -23,8 +23,8 @@ product-scoring cleanup evidence is in
 | 13 | Both verdict polarities present incl. healthy baseline (t9, t10) | MET | t9 rejects undersized TLR; t10 rewards no-control baseline assessment |
 | 14 | Difficulty spread: scores not clustered at 0 and 1 | WIP | anchor tests show ordered partials and saved-log rescoring shows per-task spread; fresh product-prompt roster calibration still needed |
 | 15 | Bottleneck diversity across tasks (read, select, size, judge) | MET | measurement, mechanism selection, sizing, verification, and baseline judgment products |
-| 16 | Reliability metric matches use case: pass^k over epochs >= 3 | WIP | `pass_hat_k.py` supports numeric pass threshold; needs fresh epochs>=3 run |
+| 16 | Reliability metric matches use case: pass^k over epochs >= 3 | WIP | `pass_hat_k.py` supports numeric pass threshold and parsed product-smoke numeric scores; needs fresh epochs>=3 roster run |
 | 17 | Environment is the real recipe; deterministic storm across repeats | WIP | recipe contract test pins it |
 | 18 | Fresh, isolated world per sample where feasible | MET | Inspect docker sandbox boots a fresh compose world per sample/epoch |
-| 19 | Transcript fairness: failures read as capability gaps, not harness bugs | WIP | smoke/export review pending after product scoring |
+| 19 | Transcript fairness: failures read as capability gaps, not harness bugs | WIP | product-smoke export samples numeric model-output failure and keeps infra-error logs out of low-score transcript sampling; full roster review pending |
 | 20 | Licensing and attribution recorded for vendored upstreams | TODO | NOTICE (P0, P6) |

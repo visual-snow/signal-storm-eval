@@ -15,8 +15,8 @@ the intended headline metric is **pass^k** over k epochs, not mean accuracy.
 > implemented. Reference, bad, and partial artifacts for t1..t10 are tested, and
 > offline scorer-anchor calibration is recorded in
 > `docs/product-score-calibration.md`. Saved legacy trajectories have also been
-> rescored in `docs/saved-log-product-calibration.md`. Fresh product-scored live
-> smoke and roster calibration are still pending.
+> rescored in `docs/saved-log-product-calibration.md`. A fresh product-scored
+> live smoke passed; full product-prompt roster calibration is still pending.
 
 ## Use case
 
@@ -139,9 +139,13 @@ No fresh product-scored model roster has been run yet. Existing roster logs
 trajectories have been rescored with the current product scorer in
 `docs/saved-log-product-calibration.md`. Local scorer-anchor calibration is also
 available in `docs/product-score-calibration.md`; each retained task has bad,
-three partial, and reference anchors with visible per-task score spread. The
-live next step is a guarded one-sample product smoke, then an epochs >= 3 roster
-run for pass^k and per-task product-prompt distributions.
+three partial, and reference anchors with visible per-task score spread.
+
+A guarded product-scored smoke run succeeded on 2026-06-19:
+`logs/product-smoke/2026-06-19T15-19-38-00-00_signal-storm_3hsWR5QsWi6CpWhcHyhhSb.eval`
+has status `success`, score `0.648`, and component metadata for t1. The next
+live step is an epochs >= 3 roster run for pass^k and per-task product-prompt
+distributions.
 
 ## Reproduce
 
@@ -153,7 +157,7 @@ uv run python scripts/generate_product_calibration_report.py docs/product-score-
 uv run python scripts/generate_saved_log_calibration_report.py docs/saved-log-product-calibration.md logs/p5 logs/p5b
 ```
 
-For the next live smoke, use the guarded wrapper so interrupted runs clean up
+To rerun the live smoke, use the guarded wrapper so interrupted runs clean up
 their docker sandboxes:
 
 ```bash

@@ -1,4 +1,11 @@
-from pass_hat_k import pass_hat_k  # scripts/ on sys.path via conftest
+from pass_hat_k import is_pass_value, pass_hat_k  # scripts/ on sys.path via conftest
+
+
+def test_is_pass_value_accepts_numeric_scores_above_threshold():
+    assert is_pass_value(0.8)
+    assert is_pass_value(0.95)
+    assert not is_pass_value(0.79)
+    assert not is_pass_value("I")
 
 
 def test_all_pass_gives_one():

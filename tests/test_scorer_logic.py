@@ -12,7 +12,6 @@ Mirrors transport_oam_bench/tests/test_scorer_logic.py.
 import json
 
 import pytest
-from inspect_ai.scorer import CORRECT, INCORRECT
 
 from signal_storm_bench.scorers import (
     _T6_ACTION,
@@ -40,6 +39,79 @@ STORM_LIVE = LiveState(
 )
 # Idle baseline: peak below the idle threshold (1.0 reg/s) -> no control needed.
 IDLE_LIVE = LiveState(baseline_peak_rate=0.0)
+
+
+REFERENCE_PRODUCTS = {
+    "t1": {
+        "request_count": 10000,
+        "unit": "registrations",
+        "source_signal": "AMF initial-registration request counter",
+        "window": "5m",
+    },
+    "t2": {
+        "peak_rate": 100,
+        "unit": "registrations_per_second",
+        "source_signal": "AMF initial-registration request rate",
+        "rate_window": "30s",
+    },
+    "t3": {
+        "request_count": 10000,
+        "success_count": 4000,
+        "deficit": 6000,
+        "unit": "registrations",
+    },
+    "t4": {
+        "verdict": "signalling storm",
+        "peak_rate": 100,
+        "deficit": 6000,
+        "evidence": "live peak rate and registration deficit show overload",
+    },
+    "t5": {
+        "mechanisms": ["NGAP Overload Start", "Traffic Load Reduction Indication"],
+        "excluded": ["AMF load-balancing Weight Factor"],
+        "rationale": (
+            "NGAP overload control can signal traffic load reduction; "
+            "load-balancing weight is not a storm flow-control mechanism."
+        ),
+    },
+    "t6": {
+        "action": _T6_ACTION,
+        "protected_traffic": ["emergency sessions", "mobile terminated services"],
+        "rejected_traffic": ["non emergency traffic", "mobile originated registrations"],
+        "rationale": (
+            "NGAP overload control protects emergency and mobile terminated services "
+            "while rejecting non emergency mobile originated traffic."
+        ),
+    },
+    "t7": {
+        "peak_rate": 100,
+        "capacity_rate": 40,
+        "formula": "post_control_rate = peak_rate * (1 - tlr_percent/100)",
+        "tlr_percent": 60,
+        "post_control_rate": 40,
+    },
+    "t8": {
+        "deferred_volume": 6000,
+        "capacity_rate": 40,
+        "backoff_min": 0,
+        "backoff_max": 150,
+        "expected_retry_rate": 40,
+    },
+    "t9": {
+        "given_tlr_percent": 10,
+        "peak_rate": 100,
+        "capacity_rate": 40,
+        "residual_rate": 90,
+        "verdict": "the proposed setting is ineffective",
+        "evidence": "10% TLR leaves residual load 90 above capacity 40.",
+    },
+    "t10": {
+        "peak_rate": 0,
+        "deficit": 0,
+        "recommendation": "no flow control needed",
+        "evidence": "idle baseline below threshold with no deficit",
+    },
+}
 
 
 def assert_score_between(score, low: float, high: float) -> None:
@@ -653,10 +725,18 @@ class TestUnparseableNeverErrors:
             pytest.param("not json at all {", id="garbage"),
         ],
     )
-    def test_garbage_scores_incorrect(self, kind: str, completion: str) -> None:
+    def test_garbage_scores_numeric_zero(self, kind: str, completion: str) -> None:
         rec = T9_REC if kind == "t9" else (BASELINE_REC if kind == "t10" else STORM_REC)
         live = IDLE_LIVE if kind == "t10" else STORM_LIVE
-        assert decide(kind, completion, rec, live).value == INCORRECT
+        assert decide(kind, completion, rec, live).value == 0.0
+
+    def test_reference_products_return_float_scores(self) -> None:
+        for kind, artifact in REFERENCE_PRODUCTS.items():
+            rec = T9_REC if kind == "t9" else (BASELINE_REC if kind == "t10" else STORM_REC)
+            live = IDLE_LIVE if kind == "t10" else STORM_LIVE
+            score = decide(kind, json.dumps(artifact), rec, live)
+            assert isinstance(score.value, float), kind
+            assert 0.0 <= score.value <= 1.0
 
     def test_unknown_kind_raises(self) -> None:
         with pytest.raises(ValueError, match="unknown task kind"):

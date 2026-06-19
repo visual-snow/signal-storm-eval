@@ -5,6 +5,10 @@ def test_clear_spread_passes():
     assert differentiated({"a": 0.9, "b": 0.6, "c": 0.4, "d": 0.3, "e": 0.1})
 
 
+def test_numeric_scores_still_differentiate():
+    assert differentiated({"a": 0.92, "b": 0.71, "c": 0.52, "d": 0.31, "e": 0.12})
+
+
 def test_clustered_fails():
     assert not differentiated({"a": 0.5, "b": 0.5, "c": 0.5, "d": 0.52, "e": 0.51})
 

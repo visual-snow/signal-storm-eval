@@ -11,6 +11,18 @@ Usage: python scripts/pass_hat_k.py logs/iter-2
 import sys
 from math import comb
 
+PASS_THRESHOLD = 0.8
+
+
+def is_pass_value(value: object, threshold: float = PASS_THRESHOLD) -> bool:
+    if value == "C":
+        return True
+    if value == "I":
+        return False
+    if isinstance(value, int | float):
+        return float(value) >= threshold
+    return False
+
 
 def pass_hat_k(counts: dict[str, tuple[int, int]], k: int) -> float:
     """Mean over samples of C(c, k)/C(n, k).
@@ -47,7 +59,7 @@ def collect_counts(log_dir: str) -> dict[str, dict[str, tuple[int, int]]]:
                 continue
             value = next(iter(smp.scores.values())).value if smp.scores else "I"
             tally[str(smp.id)][1] += 1
-            if value == "C":
+            if is_pass_value(value):
                 tally[str(smp.id)][0] += 1
         by_model[log.eval.model] = {
             sid: (c, n) for sid, (c, n) in tally.items() if n > 0

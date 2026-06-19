@@ -4,7 +4,7 @@ decide() is pure: it consumes the parsed submission plus a LiveState snapshot,
 so every grading rule unit-tests without docker. signal_storm_scorer() gathers
 the LiveState by calling sandbox_ops probes for only what the kind needs, reads
 ground truth off Sample.metadata, then calls decide. Infrastructure faults raise
-RuntimeError (the sample errors, never INCORRECT, per the guide).
+RuntimeError (the sample errors, never a binary incorrect label, per the guide).
 
 Grading is outcome-only: the agent's JSON answer is checked against live core
 state (Prometheus counters off the running AMF) and the normative NGAP/NAS
@@ -16,12 +16,10 @@ import json
 from dataclasses import dataclass
 
 from inspect_ai.scorer import (
-    CORRECT,
-    INCORRECT,
     Score,
     Scorer,
     Target,
-    accuracy,
+    mean,
     scorer,
     stderr,
 )
@@ -195,7 +193,7 @@ def decide(kind: str, completion: str, record: dict, live: LiveState) -> Score:
     """
     fields = parse_submission(completion)
     if fields is None:
-        return Score(value=INCORRECT, answer=None, explanation="unparseable submission")
+        return Score(value=0.0, answer=None, explanation="unparseable submission")
 
     if kind == "t1":
         count = fields.get("count", fields.get("request_count"))
@@ -623,7 +621,7 @@ async def _gather_live_state(kind: str, record: dict) -> LiveState:
     return LiveState()
 
 
-@scorer(metrics=[accuracy(), stderr()])
+@scorer(metrics=[mean(), stderr()])
 def signal_storm_scorer() -> Scorer:
     async def score(state: TaskState, target: Target) -> Score:
         kind = state.metadata["task_kind"]

@@ -35,17 +35,17 @@ def collect_means(log_dir: str) -> dict[str, float]:
         if log.status != "success" or not log.results:
             print(f"WARN: skipping {info.name} (status={log.status})")
             continue
-        accuracy = next(
+        metric_value = next(
             (
-                m.value
+                s.metrics[name].value
                 for s in log.results.scores
-                for name, m in s.metrics.items()
-                if name == "accuracy"
+                for name in ("mean", "accuracy")
+                if name in s.metrics
             ),
             None,
         )
-        if accuracy is not None:
-            means[log.eval.model] = accuracy
+        if metric_value is not None:
+            means[log.eval.model] = metric_value
     return means
 
 

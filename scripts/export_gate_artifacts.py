@@ -17,6 +17,7 @@ from inspect_ai.log import list_eval_logs, read_eval_log
 # Sampling policy: per model, export one correct and one incorrect/errored
 # sample transcript when available; always include every errored sample.
 PER_MODEL_CAP = 4
+PRODUCT_PASS_THRESHOLD = 0.8
 
 
 def _short_model(model: str) -> str:
@@ -45,13 +46,42 @@ def _render_sample(sample, model: str) -> str:
     return "\n".join(lines)
 
 
+def _numeric_value(value: object) -> float:
+    if value == "C":
+        return 1.0
+    if value == "I":
+        return 0.0
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def is_low_score(value: object, threshold: float = PRODUCT_PASS_THRESHOLD) -> bool:
+    if value == "C":
+        return False
+    if value == "I":
+        return True
+    try:
+        return float(value) < threshold
+    except (TypeError, ValueError):
+        return True
+
+
+def _metric_value(metrics: dict) -> float | None:
+    for name in ("mean", "accuracy"):
+        if name in metrics:
+            return metrics[name].value
+    return None
+
+
 def export(log_dir: str, out_dir: str) -> None:
     out = Path(out_dir)
     (out / "transcripts").mkdir(parents=True, exist_ok=True)
 
     def _numeric(s) -> float:
         value = next(iter(s.scores.values())).value if s.scores else 0
-        return 1.0 if value == "C" else (0.0 if value == "I" else float(value))
+        return _numeric_value(value)
 
     kinds = [f"t{i}" for i in range(1, 11)]
     summary_rows = []
@@ -59,18 +89,19 @@ def export(log_dir: str, out_dir: str) -> None:
     for info in list_eval_logs(log_dir):
         log = read_eval_log(info.name)
         model = log.eval.model
-        accuracy = None
+        suite_score = None
         if log.results:
             for eval_score in log.results.scores:
-                for name, m in eval_score.metrics.items():
-                    if name == "accuracy":
-                        accuracy = m.value
+                value = _metric_value(eval_score.metrics)
+                if value is not None:
+                    suite_score = value
+                    break
         n_samples = len(log.samples or [])
         n_errors = sum(1 for smp in (log.samples or []) if smp.error)
         epochs = log.eval.config.epochs or 1
         summary_rows.append(
             f"| {model} | {log.status} | "
-            f"{'n/a' if accuracy is None else f'{accuracy:.3f}'} | "
+            f"{'n/a' if suite_score is None else f'{suite_score:.3f}'} | "
             f"{n_samples} | {n_errors} | {epochs} |"
         )
 
@@ -96,7 +127,7 @@ def export(log_dir: str, out_dir: str) -> None:
             if s.error:
                 return True
             value = next(iter(s.scores.values())).value if s.scores else "?"
-            return value not in ("C", 1.0)
+            return is_low_score(value)
 
         for kind in sorted(by_kind):
             samples = by_kind[kind]
@@ -110,7 +141,7 @@ def export(log_dir: str, out_dir: str) -> None:
     (out / "summary.md").write_text(
         "# Run summary\n\n"
         f"source: {log_dir}\n\n"
-        "| model | status | accuracy | samples | errors | epochs |\n"
+        "| model | status | score | samples | errors | epochs |\n"
         "|---|---|---|---|---|---|\n" + "\n".join(summary_rows) + "\n\n"
         "## Per-kind means (all epochs)\n\n"
         + perkind_header

@@ -90,77 +90,33 @@ I3_CANDIDATES = (
 #  ANSWER KEY  -  the correct answers; scorers.py only, NEVER a prompt
 # ===========================================================================
 
-# t5: the two genuine flow-control mechanisms, plus the distractor that must be
-# excluded. Wording matches T5_CANDIDATES so a verbatim copy normalizes equal.
-T5_EXPECTED = (
+# i3 ANSWER KEY: the genuine NGAP/NAS overload-control mechanisms vs the
+# distractors. Wording matches I3_CANDIDATES so a verbatim copy normalizes equal.
+I3_CORRECT = (
     "NGAP Overload Start",
     "Traffic Load Reduction Indication",
+    "NAS congestion control back-off",
 )
-T5_DISTRACTOR = "AMF load-balancing Weight Factor"
-
-# t6: the TS 38.413 sec 9.3.1.105 Overload Action enumeration value.
-T6_ACTION = "Permit Emergency Sessions and mobile terminated services only"
-
-# t9 verdict synonyms: phrases that mean "the planted TLR does NOT hold the
-# load". Only judgment-bearing phrases, never bare state words ("overloaded")
-# that appear in both a right and a wrong answer.
-T9_FAILS = frozenset(
-    {
-        "ineffective",
-        "not effective",
-        "insufficient",
-        "not sufficient",
-        "inadequate",
-        "not adequate",
-        "not enough",
-        "too low",
-        "does not hold",
-        "doesn t hold",
-        "will not hold",
-        "won t hold",
-        "cannot hold",
-        "can t hold",
-        "fails to hold",
-        "not capped",
-        "does not cap",
-        "will not cap",
-        "won t cap",
-        "ceiling exceeded",
-        "still overloaded",
-        "remains overloaded",
-    }
+I3_DISTRACTORS = (
+    "AMF load-balancing Weight Factor",
+    "RACH back-off (RAN admission)",
+    "SMF Session-AMBR throttling",
 )
 
-# t10 verdict synonyms: phrases that mean "no flow control is needed" on the
-# idle baseline.
-T10_NO_CONTROL = frozenset(
-    {
-        "no control needed",
-        "no flow control needed",
-        "no flow control is needed",
-        "no control required",
-        "no flow control required",
-        "no flow control is required",
-        "flow control is not needed",
-        "flow control not needed",
-        "flow control is not required",
-        "flow control not required",
-        "control is not needed",
-        "control not needed",
-        "not needed",
-        "not required",
-        "not necessary",
-        "none needed",
-        "none required",
-        "no action needed",
-        "no action required",
-        "unnecessary",
-        "unwarranted",
-        "below ceiling",
-        "below threshold",
-        "below the idle",
-    }
-)
+# i3 overload-action traffic classes (TS 38.413 sec 9.3.1.105 Overload Action:
+# permit emergency + mobile-terminated only). Scored as controlled sets, not an
+# exact enum string.
+I3_PROTECTED = ("emergency", "mobile terminated")
+# Rejected classes must not contain the protected tokens: the rejected-traffic
+# component treats I3_PROTECTED as unsafe extras (rejecting emergency/MT voids it),
+# and "non-emergency" would normalize to contain the "emergency" token, so use
+# wording that cannot collide.
+I3_REJECTED = ("mobile originated", "other registrations")
+
+# i2 judge anchors: the live-forced correct load state per world. The grader
+# derives the expected state from the live peak (deterministic) and the judge only
+# decides whether the agent's verdict text agrees with that state.
+I2_EXPECTED_STATE = {"storm": "overloaded", "baseline": "normal"}
 
 
 # ===========================================================================

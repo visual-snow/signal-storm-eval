@@ -64,7 +64,12 @@ scoring and should not be used as current capability evidence.
 - `scripts/pass_hat_k.py` - reliability metric, treating numeric scores >= 0.8
   as passes.
 - `scripts/export_gate_artifacts.py` - summary/transcript export for review.
+- `scripts/run_product_smoke.sh` - guarded one-sample smoke wrapper with docker
+  cleanup traps.
+- `scripts/stop_signal_storm_sandboxes.sh` - removes interrupted
+  `inspect-signal_storm-*` containers.
 - `docs/product-based-signal-storm-cleanup.md` - current cleanup audit record.
+- `docs/product-score-calibration.md` - offline scorer-anchor calibration table.
 - `docs/grounding/normative-sources.md` - 3GPP/environment grounding.
 
 ## How to run
@@ -74,10 +79,11 @@ scoring and should not be used as current capability evidence.
 uv run pytest -q
 uv run ruff check .
 
-# one live sample; needs model credentials configured for Inspect/OpenRouter
-uv run inspect eval signal_storm_bench/signal_storm \
-  --limit 1 --message-limit 50 \
-  --max-sandboxes 1 --log-dir logs/product-smoke --fail-on-error 0.25
+# one live sample; guarded wrapper cleans up docker on exit/interruption
+scripts/run_product_smoke.sh openrouter/anthropic/claude-haiku-4.5
+
+# if a run is interrupted and the laptop is under load
+scripts/stop_signal_storm_sandboxes.sh
 
 # full roster + gates, when budget is approved
 MAX_SANDBOXES=1 bash scripts/run_iteration.sh product-p1 3

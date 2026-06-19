@@ -92,6 +92,11 @@ binary scores are historical only and are not valid product-score distributions.
 A fresh product smoke/calibration run should write to `logs/product-smoke` and
 then the scripts above can generate numeric model-output summaries.
 
+Live smoke should be run through `scripts/run_product_smoke.sh`, which installs
+a cleanup trap for interrupted docker sandboxes. If a run is manually stopped,
+`scripts/stop_signal_storm_sandboxes.sh` removes any remaining
+`inspect-signal_storm-*` containers.
+
 ## Residual risks
 
 - Verbatim 3GPP excerpts in `docs/grounding/normative-sources.md` are still

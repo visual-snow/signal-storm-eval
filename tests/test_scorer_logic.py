@@ -185,3 +185,26 @@ def test_gather_live_state_i2_reads_world_specific_peak():
         }
         live = asyncio.run(scorers._gather_live_state("i2", rec))
     assert live.live_peak_rate == 110.0 and live.rejected_volume == 4200.0
+
+
+def test_gather_live_state_i2_baseline_world_reads_baseline_windows():
+    async def fake_peak(*a, **k):
+        return 0.0
+
+    async def fake_deficit(*a, **k):
+        return 0.0
+
+    with (
+        patch.object(scorers, "live_peak_rate", fake_peak),
+        patch.object(scorers, "rejected_volume", fake_deficit),
+    ):
+        rec = {
+            "world": "baseline",
+            "baseline": {
+                "storm_interval": "5m",
+                "peak_window": "30s",
+                "scrape_interval_s": 5,
+            },
+        }
+        live = asyncio.run(scorers._gather_live_state("i2", rec))
+    assert live.live_peak_rate == 0.0 and live.rejected_volume == 0.0

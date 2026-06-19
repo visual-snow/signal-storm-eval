@@ -13,6 +13,8 @@ from urllib.parse import urlencode
 
 from inspect_ai.util import ExecResult, sandbox
 
+from signal_storm_bench.config import MIN_STORM_PEAK_RATE, REGINITREQ, REGINITSUCC
+
 # Compose service names (topology/compose.yaml). The AMF config + log live in the
 # all-in-one core; Prometheus scrapes its metrics; PacketRusher drives the storm.
 CORE = "open5gs-aio"
@@ -26,24 +28,16 @@ Valid service names:
 - Storm injector: packetrusher
 """
 
-# Paths inside the core container (config/amf.yaml, run.sh logger config).
+# Path inside the core container (config/amf.yaml). The registration counters
+# (REGINITREQ/REGINITSUCC) and the storm floor (MIN_STORM_PEAK_RATE) come from
+# config.py.
 AMF_CONFIG_PATH = "/open5gs/config/amf.yaml"
-AMF_LOG_PATH = "/open5gs/install/var/log/open5gs/amf.log"
-
-# Live registration counters exposed by the AMF (config/amf.yaml metrics server).
-REGINITREQ = "fivegs_amffunction_rm_reginitreq"
-REGINITSUCC = "fivegs_amffunction_rm_reginitsucc"
 
 BOOT_TIMEOUT_S = 180
 # The storm has already run by the time the gate polls, so its counters are
 # present within a scrape or two; a short timeout bounds the cost of replaying an
 # under-fired storm.
 MANIFEST_TIMEOUT_S = 60
-# Minimum live peak rate (reg/s) that counts as a real overload. A healthy storm
-# drives ~106-115 reg/s; the injector occasionally under-fires and leaves only a
-# few reg/s, which would flip the ground truth of t7/t8/t9. 50 cleanly separates
-# the two without being sensitive to per-run capacity jitter.
-MIN_STORM_PEAK_RATE = 50.0
 _POLL_INTERVAL_S = 3
 
 
@@ -162,25 +156,6 @@ async def rejected_volume(window: str) -> float:
     return await _query_scalar(promql)
 
 
-# --- Core config + log -----------------------------------------------------
-
-
-async def read_amf_config() -> str:
-    """Read the live AMF config (config/amf.yaml) from the core container."""
-    result = await safe_exec(CORE, ["cat", AMF_CONFIG_PATH])
-    if not result.success:
-        raise RuntimeError(f"reading {AMF_CONFIG_PATH} failed: {result.stderr}")
-    return result.stdout
-
-
-async def read_amf_log() -> str:
-    """Read the AMF log file (not docker logs) from the core container."""
-    result = await safe_exec(CORE, ["cat", AMF_LOG_PATH])
-    if not result.success:
-        raise RuntimeError(f"reading {AMF_LOG_PATH} failed: {result.stderr}")
-    return result.stdout
-
-
 # --- Storm injection + gates -----------------------------------------------
 
 
@@ -249,8 +224,11 @@ async def wait_storm_manifest(
     """
     deadline = asyncio.get_event_loop().time() + timeout_s
     while asyncio.get_event_loop().time() < deadline:
-        peak = await live_peak_rate(storm_window, peak_window, step_s)
-        deficit = await rejected_volume(storm_window)
+        # Independent reads of the same snapshot; gather them concurrently.
+        peak, deficit = await asyncio.gather(
+            live_peak_rate(storm_window, peak_window, step_s),
+            rejected_volume(storm_window),
+        )
         if peak >= MIN_STORM_PEAK_RATE and deficit > 0:
             return True
         await asyncio.sleep(_POLL_INTERVAL_S)

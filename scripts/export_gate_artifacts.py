@@ -14,11 +14,12 @@ from pathlib import Path
 
 from inspect_ai.log import list_eval_logs, read_eval_log
 
+from signal_storm_bench.config import KINDS, PASS_THRESHOLD
+
 # Sampling policy: per model, export one scored model-output transcript per kind,
 # preferring low scores when available. Infrastructure/sample errors stay in the
 # run summary; they are not sampled as model failures.
 PER_MODEL_CAP = 4
-PRODUCT_PASS_THRESHOLD = 0.8
 
 
 def _short_model(model: str) -> str:
@@ -58,7 +59,7 @@ def _numeric_value(value: object) -> float:
         return 0.0
 
 
-def is_low_score(value: object, threshold: float = PRODUCT_PASS_THRESHOLD) -> bool:
+def is_low_score(value: object, threshold: float = PASS_THRESHOLD) -> bool:
     if value == "C":
         return False
     if value == "I":
@@ -106,7 +107,7 @@ def export(log_dir: str, out_dir: str) -> None:
             return float("nan")
         return _numeric_value(value)
 
-    kinds = [f"t{i}" for i in range(1, 11)]
+    kinds = list(KINDS)
     summary_rows = []
     perkind_rows = []
     for info in list_eval_logs(log_dir):

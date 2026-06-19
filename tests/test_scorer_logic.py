@@ -13,21 +13,27 @@ import json
 
 import pytest
 
+from signal_storm_bench.config import (
+    GIVEN_TLR,
+    PEAK_WINDOW,
+    SCRAPE_INTERVAL_S,
+    STORM_INTERVAL,
+    T6_ACTION,
+)
 from signal_storm_bench.scorers import (
-    _T6_ACTION,
     LiveState,
     decide,
 )
 
 # Sample metadata the scorer reads: pinned storm window/scrape for the relative
-# tolerance (t1/t3), and t9's undersized given_tlr. Mirrors dataset._STORM.
+# tolerance (t1/t3), and t9's undersized given_tlr. Sourced from config.
 _STORM = {
-    "storm_interval": "5m",
-    "peak_window": "30s",
-    "scrape_interval_s": 5,
+    "storm_interval": STORM_INTERVAL,
+    "peak_window": PEAK_WINDOW,
+    "scrape_interval_s": SCRAPE_INTERVAL_S,
 }
 STORM_REC: dict = {"storm": dict(_STORM)}
-T9_REC: dict = {"storm": dict(_STORM), "given_tlr": 10}
+T9_REC: dict = {"storm": dict(_STORM), "given_tlr": GIVEN_TLR}
 BASELINE_REC: dict = {}
 
 # Storm live snapshot: counters standing, a real deficit, capacity below peak.
@@ -75,7 +81,7 @@ REFERENCE_PRODUCTS = {
         ),
     },
     "t6": {
-        "action": _T6_ACTION,
+        "action": T6_ACTION,
         "protected_traffic": ["emergency sessions", "mobile terminated services"],
         "rejected_traffic": [
             "non emergency traffic",
@@ -414,7 +420,7 @@ class TestT6Product:
     def test_reference_scores_high(self) -> None:
         c = json.dumps(
             {
-                "action": _T6_ACTION,
+                "action": T6_ACTION,
                 "protected_traffic": [
                     "emergency sessions",
                     "mobile terminated services",
@@ -453,7 +459,7 @@ class TestT6Product:
     def test_action_and_protected_traffic_scores_midrange(self) -> None:
         c = json.dumps(
             {
-                "action": _T6_ACTION,
+                "action": T6_ACTION,
                 "protected_traffic": [
                     "emergency sessions",
                     "mobile terminated services",

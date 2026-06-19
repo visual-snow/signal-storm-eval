@@ -1,22 +1,20 @@
 """Pure scoring logic. No sandbox access; fully unit-testable (P4).
 
-The parsing and comparison helpers the scorer needs: extract a JSON submission
-format-tolerantly, normalise verdicts, and the per-task numeric/set/enum checks
-the scorer grades against live counters and the normative bounds. Kept free of
-sandbox access so the whole grading surface unit-tests without docker.
+The parsing and comparison helpers the scorer composes: pull a JSON submission
+out of free text, normalise verdicts, score a number against a live reference,
+match verdict phrases, and the small numeric rules (TLR holds, residual rate).
+Kept free of sandbox access so the whole grading surface unit-tests without
+docker.
 
 Grading is outcome-only: ground truth lives in scorer-side metadata and live
-probes, never here. Unparseable submissions yield None and never raise; verdict
-helpers are tristate so an unclear submission (None) never scores correct.
+probes, never here. Unparseable submissions yield None and never raise.
 """
 
 import json
 import re
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable
 
-# TS 38.413 Traffic Load Reduction Indication is an integer percent in 1..99.
-_TLR_MIN = 1
-_TLR_MAX = 99
+from signal_storm_bench.config import TLR_MAX, TLR_MIN
 
 
 def parse_submission(text: str) -> dict | None:
@@ -39,9 +37,9 @@ def parse_submission(text: str) -> dict | None:
         parsed = json.loads(candidate)
     except (json.JSONDecodeError, TypeError):
         return None
-    if isinstance(parsed, dict):
-        return {str(k).lower(): v for k, v in parsed.items()}
-    return None
+    if not isinstance(parsed, dict):
+        return None
+    return {str(key).lower(): value for key, value in parsed.items()}
 
 
 def normalize_verdict(s: str) -> str:
@@ -49,16 +47,6 @@ def normalize_verdict(s: str) -> str:
     lowered = str(s).lower()
     stripped = re.sub(r"[^a-z0-9 ]", " ", lowered)
     return re.sub(r"\s+", " ", stripped).strip()
-
-
-def numeric_within(value: float, ref: float, rel_tol: float) -> bool:
-    """t1/t2/t3: True when value is within rel_tol (fraction) of ref.
-
-    Tolerance is relative to |ref|; when ref is zero, only an exact zero passes.
-    """
-    if ref == 0:
-        return value == 0
-    return abs(value - ref) <= abs(ref) * rel_tol
 
 
 def clamp01(value: float) -> float:
@@ -78,19 +66,30 @@ def as_float(value: object) -> float | None:
 
 
 def numeric_score(value: object, reference: float, error_scale: float) -> float:
+    """Graded closeness in 0..1: 1.0 at the reference, fading to 0 by error_scale."""
     parsed = as_float(value)
     if parsed is None or error_scale <= 0:
         return 0.0
     return clamp01(1.0 - abs(parsed - reference) / error_scale)
 
 
-def set_equal_normalized(
-    answer_set: list[str] | set[str], expected_set: list[str] | set[str]
-) -> bool:
-    """t5: True when the normalised answer set equals the normalised expected set."""
-    a = {normalize_verdict(x) for x in answer_set}
-    b = {normalize_verdict(x) for x in expected_set}
-    return a == b
+def rel_scale(reference: float, fraction: float) -> float:
+    """The error scale for a relative-tolerance measurement.
+
+    A fraction of the reference, but never below 1.0 so the tolerance cannot
+    collapse to zero on a tiny reference.
+    """
+    return max(abs(reference) * fraction, 1.0)
+
+
+def measure(value: object, reference: float, tolerance_fraction: float = 0.25) -> float:
+    """Score a submitted number against a live reference with relative tolerance.
+
+    The grader's workhorse: full credit at the reference, fading out over
+    tolerance_fraction of it. This is just numeric_score with the relative error
+    scale, named so each grader reads as one line.
+    """
+    return numeric_score(value, reference, rel_scale(reference, tolerance_fraction))
 
 
 def set_f1_score(answer: Iterable[object], expected: Iterable[object]) -> float:
@@ -117,6 +116,18 @@ def contains_normalized_phrase(text: object, phrase: str) -> bool:
     return re.search(pattern, normalized_text) is not None
 
 
+def matches_any_phrase(text: object, phrases: Iterable[str]) -> bool:
+    """True when any phrase appears in text as a whole-token phrase.
+
+    The shared verdict matcher: t4/t9/t10 all ask "does the model's wording
+    contain one of these judgment phrases?". Empty text matches nothing.
+    """
+    normalized = normalize_verdict(str(text))
+    if not normalized:
+        return False
+    return any(contains_normalized_phrase(normalized, phrase) for phrase in phrases)
+
+
 def term_coverage(text: object, required_terms: set[str]) -> float:
     if not required_terms:
         return 1.0
@@ -124,9 +135,7 @@ def term_coverage(text: object, required_terms: set[str]) -> float:
     return hits / len(required_terms)
 
 
-def component_average(
-    components: Mapping[str, float], weights: Mapping[str, float]
-) -> float:
+def component_average(components: dict[str, float], weights: dict[str, float]) -> float:
     total_weight = sum(weights.values())
     if total_weight <= 0:
         return 0.0
@@ -136,9 +145,9 @@ def component_average(
     return clamp01(total / total_weight)
 
 
-def enum_match(answer: str, enum_value: str) -> bool:
-    """t6: format-tolerant equality of a single enum action (lowercase+strip)."""
-    return normalize_verdict(answer) == normalize_verdict(enum_value)
+def residual_rate(peak_rate: float, tlr_percent: float) -> float:
+    """The load left after a Traffic Load Reduction of tlr_percent."""
+    return peak_rate * (1 - tlr_percent / 100)
 
 
 def tlr_holds(tlr: float, live_peak_rate: float, capacity_rate: float) -> bool:
@@ -146,43 +155,6 @@ def tlr_holds(tlr: float, live_peak_rate: float, capacity_rate: float) -> bool:
 
     Valid range 1..99 AND the reduced peak rate stays within capacity.
     """
-    if not _TLR_MIN <= tlr <= _TLR_MAX:
+    if not TLR_MIN <= tlr <= TLR_MAX:
         return False
-    return live_peak_rate * (1 - tlr / 100) <= capacity_rate
-
-
-def backoff_ok(
-    bmin: float, bmax: float, rejected_volume: float, capacity_rate: float
-) -> bool:
-    """t8: a NAS back-off range that disperses the deferred retries.
-
-    Spread must be positive AND the deferred volume, spread over the window,
-    must arrive at a rate the AMF can absorb.
-    """
-    spread = bmax - bmin
-    if spread <= 0:
-        return False
-    return rejected_volume / spread <= capacity_rate
-
-
-def verdict_in(synonyms: set[str], text: str) -> bool | None:
-    """t9/t10 tristate: True if a synonym is present, None when the verdict is unclear.
-
-    Reads the submission "verdict" field; True when any normalised synonym
-    appears as a phrase, otherwise None (an unclear verdict must never score
-    correct, so a content-free submission cannot win by accidentally matching
-    the live probe).
-    """
-    parsed = parse_submission(text)
-    if parsed is None:
-        return None
-    verdict = parsed.get("verdict")
-    if verdict is None:
-        return None
-    normalized = normalize_verdict(verdict)
-    if not normalized:
-        return None
-    for synonym in synonyms:
-        if contains_normalized_phrase(normalized, synonym):
-            return True
-    return None
+    return residual_rate(live_peak_rate, tlr) <= capacity_rate

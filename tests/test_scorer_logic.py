@@ -12,7 +12,7 @@ from unittest.mock import patch
 import pytest
 
 from signal_storm_bench import config, scorers
-from signal_storm_bench.scorers import LiveState, decide
+from signal_storm_bench.scorers import LiveState, decide, judge_verdict_score
 
 # Live snapshots the graders read (synthetic; no docker, no model).
 STORM_LIVE = LiveState(
@@ -208,3 +208,52 @@ def test_gather_live_state_i2_baseline_world_reads_baseline_windows():
         }
         live = asyncio.run(scorers._gather_live_state("i2", rec))
     assert live.live_peak_rate == 0.0 and live.rejected_volume == 0.0
+
+
+# ---- i2 judge -----------------------------------------------------------------
+
+
+def test_i2_storm_reference_scores_high_with_correct_verdict():
+    s = decide(
+        "i2",
+        json.dumps(
+            {
+                "load_state": "overloaded",
+                "action_needed": True,
+                "peak_rate": 110,
+                "deficit": 4200,
+                "rationale": "...",
+            }
+        ),
+        {"world": "storm"},
+        STORM_LIVE,
+        verdict_score=1.0,
+    )
+    assert s.value >= 0.95
+
+
+def test_i2_wrong_verdict_loses_the_verdict_weight():
+    s = decide(
+        "i2",
+        json.dumps(
+            {
+                "load_state": "normal",
+                "action_needed": False,
+                "peak_rate": 110,
+                "deficit": 4200,
+                "rationale": "...",
+            }
+        ),
+        {"world": "storm"},
+        STORM_LIVE,
+        verdict_score=0.0,
+    )
+    assert s.value < 0.65  # measurements right, verdict (0.40) lost
+
+
+def test_judge_verdict_score_maps_grade_token():
+    # the pure mapping from a judge GRADE token + expected state -> 0/1
+    assert judge_verdict_score("GRADE: STORM", "overloaded") == 1.0
+    assert judge_verdict_score("GRADE: NORMAL", "overloaded") == 0.0
+    assert judge_verdict_score("GRADE: NORMAL", "normal") == 1.0
+    assert judge_verdict_score("no verdict", "normal") == 0.0  # Unknown -> 0

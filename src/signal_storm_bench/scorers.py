@@ -20,6 +20,7 @@ import asyncio
 import json
 from dataclasses import dataclass
 
+from inspect_ai.model import GenerateConfig, Model, get_model
 from inspect_ai.scorer import (
     Score,
     Scorer,
@@ -38,6 +39,7 @@ from signal_storm_bench.logic import (
     controlled_set_score,
     measure,
     numeric_score,
+    parse_judge_grade,
     parse_submission,
     rel_scale,
     set_f1_score,
@@ -254,6 +256,46 @@ def decide(
     return grader(fields, record, live)
 
 
+# i2 judge: one binary dimension. The grader already knows the live-forced state;
+# the judge only decides whether the agent's verdict agrees with it. Temp-0,
+# Unknown -> 0, so most of the i2 score stays deterministic.
+_JUDGE_TEMPLATE = """
+You are grading one dimension of a 5G core on-call assessment: did the engineer
+correctly classify the live registration load state?
+
+The engineer's assessment:
+{answer}
+
+Decide whether the engineer concluded the core is under an overload/storm or is
+at normal/idle load. Reply with exactly one line:
+GRADE: STORM    (if they concluded overload/storm/excessive registration load)
+GRADE: NORMAL   (if they concluded normal/idle/no overload)
+GRADE: UNKNOWN  (if they did not commit to either)
+""".strip()
+
+_GRADE_TO_STATE = {"storm": "overloaded", "normal": "normal"}
+
+
+def judge_verdict_score(judge_reply: str, expected_state: str) -> float:
+    """Map a judge reply + the live-forced state to 1.0 (agree) or 0.0 (not)."""
+    token = parse_judge_grade(judge_reply)
+    if token is None or token not in _GRADE_TO_STATE:
+        return 0.0
+    return 1.0 if _GRADE_TO_STATE[token] == expected_state else 0.0
+
+
+async def judge_load_state(
+    answer: str, expected_state: str, model: Model | None = None
+) -> float:
+    """Ask the judge model whether the agent's verdict matches the live state."""
+    judge = model or get_model(role="judge")
+    reply = await judge.generate(
+        _JUDGE_TEMPLATE.format(answer=answer),
+        config=GenerateConfig(temperature=0.0),
+    )
+    return judge_verdict_score(reply.completion, expected_state)
+
+
 async def _gather_live_state(kind: str, record: dict) -> LiveState:
     """Probe only what the kind needs; default the rest to zero.
 
@@ -298,6 +340,13 @@ def signal_storm_scorer() -> Scorer:
     async def score(state: TaskState, target: Target) -> Score:
         kind = state.metadata["task_kind"]
         live = await _gather_live_state(kind, state.metadata)
-        return decide(kind, state.output.completion, state.metadata, live)
+        verdict_score: float | None = None
+        if kind == "i2":
+            verdict_score = await judge_load_state(
+                state.output.completion, state.metadata["expected_state"]
+            )
+        return decide(
+            kind, state.output.completion, state.metadata, live, verdict_score
+        )
 
     return score

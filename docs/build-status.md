@@ -81,7 +81,7 @@ Keyed to `EVALUATION_CHECKLIST.md`. Status: DONE / WIP / TODO / BLOCKED.
 | Evaluation report, two or more models | TODO | needs fresh product-scored roster |
 | `report_config.yaml` committed | TODO | P5 |
 | Code quality, lint, types | DONE | `ruff check`, `ruff format --check`, and `mypy src tests` pass after saved-log calibration |
-| Unit tests (solvers, scorers, tools) | DONE | full pytest passed during product cleanup; latest safe broad non-Docker slice passed with `218 passed, 4 skipped, 2 deselected` |
+| Unit tests (solvers, scorers, tools) | DONE | latest default suite passed with `uv run --no-sync pytest -q` (`223 passed, 1 skipped`) |
 | End-to-end tests per variant | TODO | P6 |
 | Pytest marks (docker / k8s) | TODO | P6 |
 | Licensing and attribution (NOTICE) | TODO | vendored env provenance, P0 and P6 |

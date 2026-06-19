@@ -18,7 +18,7 @@ because the implementation is ready.
 | Inspect metrics use numeric scoring | Met | `src/signal_storm_bench/scorers.py` uses `mean()` and `stderr()`. |
 | Result scripts parse numeric scores | Met | `tests/test_differentiation.py`, `tests/test_kind_differentiation.py`, `tests/test_pass_hat_k.py`, and `tests/test_export_gate_artifacts.py`. Product-smoke scripts parsed numeric score `0.648`; `export_gate_artifacts.py` keeps infra-error runs out of low-score transcript sampling. |
 | No scorer relies on fragile substring matching unless the string is itself product evidence | Met | Numeric/set scorers dominate. Product-text components use normalized phrase-boundary matching over submitted artifact fields; `tests/test_logic.py::test_term_coverage_uses_token_boundaries` pins the boundary behavior. |
-| `uv run pytest` passes | Met for latest full run; broad non-Docker slice rechecked | Full suite passed earlier in cleanup (`199 passed, 1 skipped`). Latest safe broad slice passed with `RUN_DATASET_DOWNLOAD_TESTS=0 uv run --no-sync pytest -m 'not docker and not slow' -q` (`218 passed, 4 skipped, 2 deselected`). |
+| `uv run pytest` passes | Met | Latest default suite passed with `uv run --no-sync pytest -q` (`223 passed, 1 skipped`). |
 | Ruff and mypy pass | Met | Latest `ruff check .`, `ruff format --check`, and `mypy src tests` passed after saved-log calibration. |
 | Smoke eval runs without infra failures counted as model failures | Met | `scripts/run_product_smoke.sh openrouter/anthropic/claude-haiku-4.5` completed on 2026-06-19 with log `logs/product-smoke/2026-06-19T15-19-38-00-00_signal-storm_3hsWR5QsWi6CpWhcHyhhSb.eval`, status `success`, sample error `None`, numeric score `0.648`, and component metadata. The earlier product-smoke infra-error log remains skipped by result scripts. |
 | Local calibration report shows per-task score distributions | Met for scorer anchors and saved trajectories | `docs/product-score-calibration.md` shows per-task reference/partial/bad score spread without Docker/model calls. `docs/saved-log-product-calibration.md` rescored available saved trajectories with the current product scorer. |
@@ -46,7 +46,7 @@ uv run python scripts/export_gate_artifacts.py logs/product-smoke gate_exports/p
 `only 1 of 5 models produced a successful run`; this is a roster-size failure,
 not an infrastructure failure.
 
-## Pending Live Commands
+## Remaining Full-Roster Commands
 
 Run only when Docker/model use is acceptable:
 

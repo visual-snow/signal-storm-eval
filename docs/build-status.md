@@ -6,16 +6,22 @@ live in `EVALUATION_CHECKLIST.md` (the inspect_evals bible, copied verbatim);
 this file is the live status overlay on it, and the rest of `docs/` is the
 build-loop memory.
 
-## Current state (2026-06-18)
+## Current state (2026-06-19)
 
-- Environment: BUILT and contract-tested. It lives in the
-  `open5gs_signaling_storm_sandbox` recipe
-  (`env_recipes_telco/recipes/open5gs_signaling_storm_sandbox`), not in this
-  repo. Open5GS 5G core on Kubernetes, plus a PacketRusher storm injector and
-  Prometheus. Its pytest contract suite passes against a live cluster.
-- Inspect eval: NOT built. No Python package, no `@task`, no agent tools, no
-  scorers, no dataset, no `eval.yaml`, no tests.
-- Results: none. No models have run; no differentiation has been measured.
+- Environment: BUILT locally in `src/signal_storm_bench/topology/`. Inspect
+  attaches the docker-compose Open5GS AIO, MongoDB/subscriber seed, Prometheus,
+  and PacketRusher storm injector as a docker sandbox. The AMF is CPU-capped so
+  storm runs form a request/success deficit.
+- Inspect eval: BUILT. `signal_storm_bench/signal_storm` has t1..t10 product
+  prompts, NOC tools, scorer-side live probes, and deterministic numeric
+  product scorers with component metadata.
+- Scoring cleanup: BUILT for local scorer validation. Reference, bad, and three
+  partial artifacts per task are tested in `tests/test_scorer_logic.py`, and
+  `docs/product-score-calibration.md` records offline per-task score spread.
+- Results: Product-scored live/model calibration is still pending. Historical
+  `logs/p5` and `logs/p5b` predate product scoring and are not current
+  capability evidence. Use `scripts/run_product_smoke.sh` for the next live
+  smoke; it cleans up interrupted `inspect-signal_storm-*` containers.
 
 ## House-style template
 
@@ -51,9 +57,9 @@ Resolved (2026-06-18):
   2026-06-18; all slugs verified against the live catalog.
 - P5 execution: full loop within a budget (default cap $5/model unless changed).
 
-Gate before any paid run: `OPENROUTER_API_KEY` is not set in this repo. The
-sibling `zhejiang-transport-eval/.env` has one; reuse it or export the variable
-before P4/P5. Implementation and design review (P1, P3) need no key.
+Gate before any paid run: model credentials must be available in `.env` or the
+environment. Implementation, scorer validation, and offline calibration need no
+model key and do not boot docker.
 
 ## Master checklist status
 
@@ -61,16 +67,16 @@ Keyed to `EVALUATION_CHECKLIST.md`. Status: DONE / WIP / TODO / BLOCKED.
 
 | Checklist item | Status | Note |
 |---|---|---|
-| Eval runs with `inspect eval ... --limit 1` | DONE | P4 smoke: status success, accuracy 1.0, no infra errors (logs/p4-smoke) |
-| Trajectory analysis on a small run | TODO | after first run (P5) |
-| Manually examined checks (best practices) | TODO | P3, P6 |
-| Name validity | WIP | `signal_storm_bench` matches the use case |
-| Dataset validity (each sample passable and failable) | TODO | per-task in P3 |
-| Scoring validity (measures completion, not a proxy) | TODO | scorers in P3 |
-| Evaluation report, two or more models | BLOCKED | needs a running cluster |
+| Eval runs with `inspect eval ... --limit 1` | WIP | old binary-scored smoke exists; fresh product-scored smoke pending through `scripts/run_product_smoke.sh` |
+| Trajectory analysis on a small run | TODO | after fresh product smoke |
+| Manually examined checks (best practices) | WIP | cleanup docs and scorer anchors reviewed; fresh transcript review pending |
+| Name validity | DONE | `signal_storm_bench` matches the use case |
+| Dataset validity (each sample passable and failable) | DONE | product prompts plus reference/bad/partial scorer anchors for t1..t10 |
+| Scoring validity (measures completion, not a proxy) | WIP | numeric product scorers and offline calibration pass; live product smoke pending |
+| Evaluation report, two or more models | TODO | needs fresh product-scored roster |
 | `report_config.yaml` committed | TODO | P5 |
-| Code quality, lint, types | TODO | P3, P6 |
-| Unit tests (solvers, scorers, tools) | TODO | P3, P6 |
+| Code quality, lint, types | DONE | `ruff check`, `ruff format --check`, and `mypy src tests` pass as of product cleanup |
+| Unit tests (solvers, scorers, tools) | DONE | full pytest passed during product cleanup; targeted product tests pass after offline calibration |
 | End-to-end tests per variant | TODO | P6 |
 | Pytest marks (docker / k8s) | TODO | P6 |
 | Licensing and attribution (NOTICE) | TODO | vendored env provenance, P0 and P6 |

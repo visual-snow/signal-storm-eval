@@ -14,8 +14,9 @@ the intended headline metric is **pass^k** over k epochs, not mean accuracy.
 > environment, Inspect task, agent tools, and numeric product scorers are
 > implemented. Reference, bad, and partial artifacts for t1..t10 are tested, and
 > offline scorer-anchor calibration is recorded in
-> `docs/product-score-calibration.md`. Fresh product-scored live smoke and roster
-> calibration are still pending.
+> `docs/product-score-calibration.md`. Saved legacy trajectories have also been
+> rescored in `docs/saved-log-product-calibration.md`. Fresh product-scored live
+> smoke and roster calibration are still pending.
 
 ## Use case
 
@@ -134,11 +135,13 @@ The cleanup audit, formulas, score anchors, and residual risks are in
 ## Results
 
 No fresh product-scored model roster has been run yet. Existing roster logs
-`logs/p5` and `logs/p5b` predate product scoring and are historical only. Local
-scorer-anchor calibration is available in `docs/product-score-calibration.md`;
-each retained task has bad, three partial, and reference anchors with visible
-per-task score spread. The live next step is a guarded one-sample product smoke,
-then an epochs >= 3 roster run for pass^k and per-task model distributions.
+`logs/p5` and `logs/p5b` predate product prompts, but their successful saved
+trajectories have been rescored with the current product scorer in
+`docs/saved-log-product-calibration.md`. Local scorer-anchor calibration is also
+available in `docs/product-score-calibration.md`; each retained task has bad,
+three partial, and reference anchors with visible per-task score spread. The
+live next step is a guarded one-sample product smoke, then an epochs >= 3 roster
+run for pass^k and per-task product-prompt distributions.
 
 ## Reproduce
 
@@ -147,6 +150,7 @@ Offline scorer validation does not start Docker:
 ```bash
 uv run pytest tests/test_scorer_logic.py tests/test_product_calibration_report.py -q
 uv run python scripts/generate_product_calibration_report.py docs/product-score-calibration.md
+uv run python scripts/generate_saved_log_calibration_report.py docs/saved-log-product-calibration.md logs/p5 logs/p5b
 ```
 
 For the next live smoke, use the guarded wrapper so interrupted runs clean up
@@ -177,3 +181,5 @@ uv run python scripts/pass_hat_k.py logs/product-p1
 - `docs/product-based-signal-storm-cleanup.md` — retained-task rationale,
   scorer formulas, anchors, and residual risks.
 - `docs/product-score-calibration.md` — offline per-task scorer-anchor spread.
+- `docs/saved-log-product-calibration.md` — current product scorer applied to
+  available successful saved trajectories.

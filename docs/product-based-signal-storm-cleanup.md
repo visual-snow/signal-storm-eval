@@ -88,9 +88,18 @@ five anchors, a high reference, a low bad anchor, and at least four distinct
 scores.
 
 The saved roster logs `logs/p5` and `logs/p5b` predate product scoring, so their
-binary scores are historical only and are not valid product-score distributions.
+legacy binary scores remain historical only. They are still useful saved
+trajectories: `scripts/generate_saved_log_calibration_report.py` reconstructs
+the live references present in successful legacy scorer explanations and
+rescored their completions with the current product scorer. The resulting
+`docs/saved-log-product-calibration.md` report shows per-task score spread over
+available model outputs, while documenting that old prompt schemas cap many
+scores below reference quality. Samples without enough legacy live references
+are omitted rather than counted as model failures.
+
 A fresh product smoke/calibration run should write to `logs/product-smoke` and
-then the scripts above can generate numeric model-output summaries.
+then the differentiation scripts above can generate product-prompt numeric
+model-output summaries.
 
 Live smoke should be run through `scripts/run_product_smoke.sh`, which installs
 a cleanup trap for interrupted docker sandboxes. If a run is manually stopped,
@@ -102,9 +111,10 @@ a cleanup trap for interrupted docker sandboxes. If a run is manually stopped,
 - Verbatim 3GPP excerpts in `docs/grounding/normative-sources.md` are still
   placeholders; the cited sections and bounds are present, but the offline
   reviewer cannot yet verify exact source text.
-- Full roster calibration across model outputs is still budget-dependent. Until
-  a fresh product-scored roster exists, the strongest calibration evidence is
-  the local anchor distribution in scorer tests plus smoke-run transcripts.
+- Full product-prompt roster calibration across model outputs is still
+  budget-dependent. Until a fresh product-scored roster exists, calibration
+  evidence is the local anchor distribution plus saved-log rescoring of old
+  successful trajectories.
 - t5/t6 remain sensitive to terminology. The scorer now grades components and
   phrase-boundary term coverage over product fields instead of exact strings,
   but synonym coverage should be checked against fresh transcripts.

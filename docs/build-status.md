@@ -19,9 +19,12 @@ build-loop memory.
   partial artifacts per task are tested in `tests/test_scorer_logic.py`, and
   `docs/product-score-calibration.md` records offline per-task score spread.
 - Results: Product-scored live/model calibration is still pending. Historical
-  `logs/p5` and `logs/p5b` predate product scoring and are not current
-  capability evidence. Use `scripts/run_product_smoke.sh` for the next live
-  smoke; it cleans up interrupted `inspect-signal_storm-*` containers.
+  `logs/p5` and `logs/p5b` predate product prompts; their successful saved
+  completions have been rescored with the current product scorer in
+  `docs/saved-log-product-calibration.md`, but fresh product-prompt logs are
+  still needed for current capability evidence. Use
+  `scripts/run_product_smoke.sh` for the next live smoke; it cleans up
+  interrupted `inspect-signal_storm-*` containers.
 
 ## House-style template
 
@@ -72,11 +75,11 @@ Keyed to `EVALUATION_CHECKLIST.md`. Status: DONE / WIP / TODO / BLOCKED.
 | Manually examined checks (best practices) | WIP | cleanup docs and scorer anchors reviewed; fresh transcript review pending |
 | Name validity | DONE | `signal_storm_bench` matches the use case |
 | Dataset validity (each sample passable and failable) | DONE | product prompts plus reference/bad/partial scorer anchors for t1..t10 |
-| Scoring validity (measures completion, not a proxy) | WIP | numeric product scorers and offline calibration pass; live product smoke pending |
+| Scoring validity (measures completion, not a proxy) | WIP | numeric product scorers, scorer-anchor calibration, and saved-log rescoring pass; live product smoke pending |
 | Evaluation report, two or more models | TODO | needs fresh product-scored roster |
 | `report_config.yaml` committed | TODO | P5 |
 | Code quality, lint, types | DONE | `ruff check`, `ruff format --check`, and `mypy src tests` pass as of product cleanup |
-| Unit tests (solvers, scorers, tools) | DONE | full pytest passed during product cleanup; targeted product tests pass after offline calibration |
+| Unit tests (solvers, scorers, tools) | DONE | full pytest passed during product cleanup; targeted product and saved-log tests pass after offline calibration |
 | End-to-end tests per variant | TODO | P6 |
 | Pytest marks (docker / k8s) | TODO | P6 |
 | Licensing and attribution (NOTICE) | TODO | vendored env provenance, P0 and P6 |

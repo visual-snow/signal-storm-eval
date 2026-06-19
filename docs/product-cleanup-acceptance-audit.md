@@ -21,9 +21,17 @@ because the implementation is ready.
 | `uv run pytest` passes | Met for latest full run | Full suite passed earlier in cleanup (`199 passed, 1 skipped`). Latest targeted non-Docker suite passed after final doc/tooling edits. |
 | Ruff and mypy pass | Met | Latest `ruff check`, `ruff format --check`, and `mypy src tests` passed during cleanup; latest targeted Ruff checks passed after final edits. |
 | Smoke eval runs without infra failures counted as model failures | Pending | Product smoke was intentionally paused after laptop load. Use `scripts/run_product_smoke.sh` when Docker use is safe. |
-| Local calibration report shows per-task score distributions | Met for scorer anchors | `docs/product-score-calibration.md` shows per-task reference/partial/bad score spread without Docker/model calls. |
-| Calibration across product-scored model outputs or saved trajectories | Pending | Existing `logs/p5`/`logs/p5b` predate product scoring. Fresh product-scored logs are required. |
+| Local calibration report shows per-task score distributions | Met for scorer anchors and saved trajectories | `docs/product-score-calibration.md` shows per-task reference/partial/bad score spread without Docker/model calls. `docs/saved-log-product-calibration.md` rescored available saved trajectories with the current product scorer. |
+| Calibration across product-scored model outputs or saved trajectories | Met for saved trajectories, pending for fresh product-prompt roster | `docs/saved-log-product-calibration.md` uses successful `logs/p5`/`logs/p5b` trajectories. These logs predate product prompts, so they are evidence of scorer separation over available model outputs, not a replacement for a fresh product-scored roster. |
 | Cleanup doc records retained/dropped rationale, formulas, grounding, anchors, risks | Met | `docs/product-based-signal-storm-cleanup.md` and this audit. |
+
+## Offline Calibration Command
+
+This is safe to run without Docker/model calls:
+
+```bash
+uv run python scripts/generate_saved_log_calibration_report.py docs/saved-log-product-calibration.md logs/p5 logs/p5b
+```
 
 ## Pending Live Commands
 

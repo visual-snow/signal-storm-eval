@@ -13,7 +13,9 @@ score with component metadata.
 The main cleanup record is `docs/product-based-signal-storm-cleanup.md`. It
 lists retained task rationale, formulas, grounding, score anchors, and residual
 risks. The historical roster logs `logs/p5` and `logs/p5b` predate product
-scoring and should not be used as current capability evidence.
+prompts; their binary scores should not be used as current capability evidence,
+but their successful saved completions have been rescored with the current
+product scorer in `docs/saved-log-product-calibration.md`.
 
 ## What is solid
 
@@ -37,9 +39,10 @@ scoring and should not be used as current capability evidence.
 - Verbatim 3GPP excerpts in `docs/grounding/normative-sources.md` are still
   placeholders. The bounds and section citations are recorded, but an offline
   reviewer cannot yet compare exact source text.
-- Fresh product-scored model calibration is still needed. The current strongest
-  local calibration evidence is the scorer anchor test set; a roster run with
-  epochs >= 3 is still needed for pass^k and differentiation.
+- Fresh product-scored model calibration is still needed. Current offline
+  calibration evidence is the scorer anchor test set plus saved-log rescoring
+  of old successful trajectories; a product-prompt roster run with epochs >= 3
+  is still needed for pass^k and differentiation.
 - t7 and t8 are intentionally component-scored because they combine measurement
   and sizing. If fresh transcripts show mixed failure modes that are hard to
   interpret, split them into narrower samples.
@@ -68,8 +71,12 @@ scoring and should not be used as current capability evidence.
   cleanup traps.
 - `scripts/stop_signal_storm_sandboxes.sh` - removes interrupted
   `inspect-signal_storm-*` containers.
+- `scripts/generate_saved_log_calibration_report.py` - offline saved-log
+  rescoring report generator.
 - `docs/product-based-signal-storm-cleanup.md` - current cleanup audit record.
 - `docs/product-score-calibration.md` - offline scorer-anchor calibration table.
+- `docs/saved-log-product-calibration.md` - current product scorer applied to
+  successful saved trajectories from `logs/p5` and `logs/p5b`.
 - `docs/grounding/normative-sources.md` - 3GPP/environment grounding.
 
 ## How to run
@@ -78,6 +85,10 @@ scoring and should not be used as current capability evidence.
 # unit tests + lint
 uv run pytest -q
 uv run ruff check .
+
+# offline calibration reports
+uv run python scripts/generate_product_calibration_report.py docs/product-score-calibration.md
+uv run python scripts/generate_saved_log_calibration_report.py docs/saved-log-product-calibration.md logs/p5 logs/p5b
 
 # one live sample; guarded wrapper cleans up docker on exit/interruption
 scripts/run_product_smoke.sh openrouter/anthropic/claude-haiku-4.5
@@ -97,5 +108,6 @@ uv run python scripts/export_gate_artifacts.py logs/product-p1 gate_exports/prod
 
 Earlier commits and `docs/iteration-log.md` describe a binary-scored version
 whose scores were not trustworthy capability evidence. Keep those logs for
-debugging environment history, but evaluate the benchmark from the product-based
-scorers and fresh product-scored logs only.
+debugging environment history and offline scorer spread checks, but evaluate
+fresh model capability from the product-based scorers and fresh product-scored
+logs only.

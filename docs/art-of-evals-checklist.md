@@ -21,7 +21,7 @@ product-scoring cleanup evidence is in
 | 11 | One primary bottleneck per task | WIP | each task now has one product, but t7/t8 still combine measurement and sizing components |
 | 12 | Tool access matches a real NOC engineer (four primitives, ~40 messages) | MET | tools remain Prometheus/config/log/storm primitives; message limit is 50 |
 | 13 | Both verdict polarities present incl. healthy baseline (t9, t10) | MET | t9 rejects undersized TLR; t10 rewards no-control baseline assessment |
-| 14 | Difficulty spread: scores not clustered at 0 and 1 | WIP | anchor tests show ordered partials; fresh roster calibration still needed |
+| 14 | Difficulty spread: scores not clustered at 0 and 1 | WIP | anchor tests show ordered partials and saved-log rescoring shows per-task spread; fresh product-prompt roster calibration still needed |
 | 15 | Bottleneck diversity across tasks (read, select, size, judge) | MET | measurement, mechanism selection, sizing, verification, and baseline judgment products |
 | 16 | Reliability metric matches use case: pass^k over epochs >= 3 | WIP | `pass_hat_k.py` supports numeric pass threshold; needs fresh epochs>=3 run |
 | 17 | Environment is the real recipe; deterministic storm across repeats | WIP | recipe contract test pins it |

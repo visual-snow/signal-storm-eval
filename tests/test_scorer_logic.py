@@ -256,4 +256,7 @@ def test_judge_verdict_score_maps_grade_token():
     assert judge_verdict_score("GRADE: STORM", "overloaded") == 1.0
     assert judge_verdict_score("GRADE: NORMAL", "overloaded") == 0.0
     assert judge_verdict_score("GRADE: NORMAL", "normal") == 1.0
-    assert judge_verdict_score("no verdict", "normal") == 0.0  # Unknown -> 0
+    assert judge_verdict_score("no verdict", "normal") == 0.0  # no GRADE line -> 0
+    assert (
+        judge_verdict_score("GRADE: UNKNOWN", "normal") == 0.0
+    )  # explicit unknown -> 0

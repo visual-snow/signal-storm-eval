@@ -12,10 +12,12 @@ import pytest
 from signal_storm_bench.logic import (
     clamp01,
     component_average,
+    controlled_set_score,
     matches_any_phrase,
     measure,
     normalize_verdict,
     numeric_score,
+    parse_judge_grade,
     parse_submission,
     rel_scale,
     residual_rate,
@@ -160,3 +162,32 @@ def test_tlr_holds_in_range_and_capping():
 @pytest.mark.parametrize("tlr", [0, 100, -5, 150])
 def test_tlr_holds_out_of_range_fails(tlr: int):
     assert not tlr_holds(tlr, 100.0, 1.0)
+
+
+# --- parse_judge_grade / controlled_set_score ---------------------------------
+
+
+def test_parse_judge_grade_reads_the_verdict_token():
+    assert parse_judge_grade("Reasoning...\nGRADE: STORM") == "storm"
+    assert parse_judge_grade("grade: normal") == "normal"
+    assert parse_judge_grade("GRADE: UNKNOWN") == "unknown"
+
+
+def test_parse_judge_grade_returns_none_when_absent():
+    assert parse_judge_grade("the model rambled with no verdict") is None
+    assert parse_judge_grade("") is None
+
+
+def test_controlled_set_score_rewards_recall_penalises_unsafe_extras():
+    # full recall of the expected set, no unsafe extras -> 1.0
+    assert controlled_set_score(["emergency", "mobile terminated"],
+                                ("emergency", "mobile terminated"),
+                                unsafe=()) == 1.0
+    # half recall -> 0.5
+    assert controlled_set_score(["emergency"],
+                                ("emergency", "mobile terminated"),
+                                unsafe=()) == 0.5
+    # an unsafe extra zeroes the score
+    assert controlled_set_score(["emergency", "mobile terminated", "all traffic"],
+                                ("emergency", "mobile terminated"),
+                                unsafe=("all traffic",)) == 0.0

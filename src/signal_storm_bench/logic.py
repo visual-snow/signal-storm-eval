@@ -158,3 +158,30 @@ def tlr_holds(tlr: float, live_peak_rate: float, capacity_rate: float) -> bool:
     if not TLR_MIN <= tlr <= TLR_MAX:
         return False
     return residual_rate(live_peak_rate, tlr) <= capacity_rate
+
+
+def parse_judge_grade(text: str) -> str | None:
+    """Pull the single verdict token out of a judge reply (`GRADE: <token>`).
+
+    Returns the lowercased token (e.g. "storm", "normal", "unknown") or None when
+    the reply carries no GRADE line. Pure; never raises.
+    """
+    match = re.search(r"grade:\s*([a-z]+)", str(text), re.IGNORECASE)
+    return match.group(1).lower() if match else None
+
+
+def controlled_set_score(
+    answer: Iterable[object],
+    expected: Iterable[str],
+    unsafe: Iterable[str] = (),
+) -> float:
+    """Recall of an expected term set, zeroed if any unsafe term is included.
+
+    Used for i3 traffic classes: full credit for naming the protected/rejected
+    classes, but an unsafe over-broad class (e.g. rejecting emergency traffic)
+    voids the component. Phrase-boundary matching via term_coverage.
+    """
+    answer_text = " ".join(str(x) for x in answer)
+    if any(contains_normalized_phrase(answer_text, term) for term in unsafe):
+        return 0.0
+    return term_coverage(answer_text, set(expected))

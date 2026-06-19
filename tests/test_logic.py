@@ -11,11 +11,16 @@ import pytest
 
 from signal_storm_bench.logic import (
     backoff_ok,
+    clamp01,
+    component_average,
     enum_match,
     normalize_verdict,
+    numeric_score,
     numeric_within,
     parse_submission,
+    set_f1_score,
     set_equal_normalized,
+    term_coverage,
     tlr_holds,
     verdict_in,
 )
@@ -86,6 +91,17 @@ def test_numeric_within_zero_ref_only_exact_zero():
     assert not numeric_within(0.01, 0.0, 0.10)
 
 
+def test_numeric_score_is_gradual():
+    assert numeric_score(100, 100, error_scale=50) == 1.0
+    assert numeric_score(125, 100, error_scale=50) == 0.5
+    assert numeric_score(200, 100, error_scale=50) == 0.0
+
+
+def test_numeric_score_handles_non_numeric_as_zero():
+    assert numeric_score("bad", 100, error_scale=50) == 0.0
+    assert numeric_score(None, 100, error_scale=50) == 0.0
+
+
 # --- set_equal_normalized (t5) ------------------------------------------------
 
 
@@ -104,6 +120,33 @@ def test_set_equal_normalized_rejects_distractor_or_missing():
     )
     # a genuine mechanism dropped
     assert not set_equal_normalized(["NGAP Overload Start"], expected)
+
+
+def test_set_f1_score_rewards_partial_sets():
+    assert set_f1_score(["a", "b"], ["a", "b"]) == 1.0
+    assert set_f1_score(["a"], ["a", "b"]) == pytest.approx(2 / 3)
+    assert set_f1_score(["x"], ["a", "b"]) == 0.0
+
+
+def test_term_coverage_is_gradual():
+    assert (
+        term_coverage(
+            "permit emergency and mobile terminated traffic",
+            {"emergency", "mobile terminated"},
+        )
+        == 1.0
+    )
+    assert (
+        term_coverage("permit emergency traffic", {"emergency", "mobile terminated"})
+        == 0.5
+    )
+
+
+def test_component_average_clamps_and_weights():
+    assert clamp01(1.5) == 1.0
+    assert component_average(
+        {"a": 1.0, "b": 0.5}, {"a": 0.75, "b": 0.25}
+    ) == pytest.approx(0.875)
 
 
 # --- enum_match (t6) ----------------------------------------------------------

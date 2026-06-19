@@ -12,6 +12,7 @@ helpers are tristate so an unclear submission (None) never scores correct.
 
 import json
 import re
+from collections.abc import Iterable, Mapping
 
 # TS 38.413 Traffic Load Reduction Indication is an integer percent in 1..99.
 _TLR_MIN = 1
@@ -60,6 +61,29 @@ def numeric_within(value: float, ref: float, rel_tol: float) -> bool:
     return abs(value - ref) <= abs(ref) * rel_tol
 
 
+def clamp01(value: float) -> float:
+    return max(0.0, min(1.0, float(value)))
+
+
+def as_float(value: object) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        match = re.search(r"-?\d+(?:\.\d+)?", value)
+        if match:
+            return float(match.group(0))
+    return None
+
+
+def numeric_score(value: object, reference: float, error_scale: float) -> float:
+    parsed = as_float(value)
+    if parsed is None or error_scale <= 0:
+        return 0.0
+    return clamp01(1.0 - abs(parsed - reference) / error_scale)
+
+
 def set_equal_normalized(
     answer_set: list[str] | set[str], expected_set: list[str] | set[str]
 ) -> bool:
@@ -67,6 +91,41 @@ def set_equal_normalized(
     a = {normalize_verdict(x) for x in answer_set}
     b = {normalize_verdict(x) for x in expected_set}
     return a == b
+
+
+def set_f1_score(answer: Iterable[object], expected: Iterable[object]) -> float:
+    answer_set = {normalize_verdict(str(x)) for x in answer if str(x).strip()}
+    expected_set = {normalize_verdict(str(x)) for x in expected if str(x).strip()}
+    if not answer_set and not expected_set:
+        return 1.0
+    if not answer_set or not expected_set:
+        return 0.0
+    true_pos = len(answer_set & expected_set)
+    precision = true_pos / len(answer_set)
+    recall = true_pos / len(expected_set)
+    if precision + recall == 0:
+        return 0.0
+    return 2 * precision * recall / (precision + recall)
+
+
+def term_coverage(text: object, required_terms: set[str]) -> float:
+    if not required_terms:
+        return 1.0
+    normalized = normalize_verdict(str(text))
+    hits = sum(1 for term in required_terms if normalize_verdict(term) in normalized)
+    return hits / len(required_terms)
+
+
+def component_average(
+    components: Mapping[str, float], weights: Mapping[str, float]
+) -> float:
+    total_weight = sum(weights.values())
+    if total_weight <= 0:
+        return 0.0
+    total = sum(
+        clamp01(components.get(name, 0.0)) * weight for name, weight in weights.items()
+    )
+    return clamp01(total / total_weight)
 
 
 def enum_match(answer: str, enum_value: str) -> bool:

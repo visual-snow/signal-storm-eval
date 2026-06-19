@@ -176,6 +176,7 @@ def test_parse_judge_grade_reads_the_verdict_token():
 def test_parse_judge_grade_returns_none_when_absent():
     assert parse_judge_grade("the model rambled with no verdict") is None
     assert parse_judge_grade("") is None
+    assert parse_judge_grade("we recommend a downgrade: to normal load") is None
 
 
 def test_controlled_set_score_rewards_recall_penalises_unsafe_extras():

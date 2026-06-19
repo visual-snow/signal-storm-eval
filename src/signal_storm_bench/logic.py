@@ -164,9 +164,11 @@ def parse_judge_grade(text: str) -> str | None:
     """Pull the single verdict token out of a judge reply (`GRADE: <token>`).
 
     Returns the lowercased token (e.g. "storm", "normal", "unknown") or None when
-    the reply carries no GRADE line. Pure; never raises.
+    the reply carries no GRADE line. Ignores a `grade:` substring inside a larger
+    word, so prose like "downgrade: to normal" does not false-positive. Pure;
+    never raises.
     """
-    match = re.search(r"grade:\s*([a-z]+)", str(text), re.IGNORECASE)
+    match = re.search(r"(?<!\w)grade:\s*([a-z]+)", str(text), re.IGNORECASE)
     return match.group(1).lower() if match else None
 
 

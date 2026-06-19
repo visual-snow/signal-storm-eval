@@ -28,6 +28,7 @@ from inspect_ai.solver import TaskState
 from signal_storm_bench.logic import (
     as_float,
     component_average,
+    contains_normalized_phrase,
     normalize_verdict,
     numeric_score,
     parse_submission,
@@ -54,7 +55,7 @@ _T5_DISTRACTOR = "AMF load-balancing Weight Factor"
 _T6_ACTION = "Permit Emergency Sessions and mobile terminated services only"
 
 # t9/t10 verdict synonym sets (normalised by lowercasing + stripping punctuation;
-# verdict_in does substring containment). Both tasks have a constant live half
+# matched with phrase boundaries). Both tasks have a constant live half
 # (the storm is always overloaded, the baseline always idle), so the verdict match
 # is the sole discriminator: it must accept how models actually phrase the right
 # call yet still reject the opposite polarity. Hence only judgment-bearing phrases
@@ -138,7 +139,7 @@ def _text_matches_any(text: object, synonyms: set[str]) -> bool | None:
     if not normalized:
         return None
     for synonym in synonyms:
-        if normalize_verdict(synonym) in normalized:
+        if contains_normalized_phrase(normalized, synonym):
             return True
     return None
 
@@ -149,9 +150,9 @@ def _unit_score(value: object, expected_unit: str) -> float:
 
 def _window_score(value: object, expected_window: str) -> float:
     normalized = normalize_verdict(str(value))
-    if normalize_verdict(expected_window) in normalized:
+    if contains_normalized_phrase(normalized, expected_window):
         return 1.0
-    if "storm interval" in normalized:
+    if contains_normalized_phrase(normalized, "storm interval"):
         return 1.0
     return 0.0
 
@@ -216,7 +217,7 @@ def _unsafe_control_recommendation(text: object) -> bool:
         "flow control required",
         "control required",
     }
-    return any(term in normalized for term in unsafe_terms)
+    return any(contains_normalized_phrase(normalized, term) for term in unsafe_terms)
 
 
 def decide(kind: str, completion: str, record: dict, live: LiveState) -> Score:

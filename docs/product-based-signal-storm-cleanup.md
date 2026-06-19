@@ -33,8 +33,8 @@ binary "did the model say the expected final answer" contract.
 
 All task scores are weighted component averages. Numeric components use
 `numeric_score(value, expected, error_scale)`, a clipped linear score in [0, 1].
-Set/list components use set F1 or term coverage. Unparseable submissions score
-0.0 and never raise.
+Set/list components use set F1 or normalized phrase-boundary term coverage over
+the submitted product fields. Unparseable submissions score 0.0 and never raise.
 
 | Task | Formula |
 |---|---|
@@ -106,7 +106,7 @@ a cleanup trap for interrupted docker sandboxes. If a run is manually stopped,
   a fresh product-scored roster exists, the strongest calibration evidence is
   the local anchor distribution in scorer tests plus smoke-run transcripts.
 - t5/t6 remain sensitive to terminology. The scorer now grades components and
-  term coverage instead of exact strings, but synonym coverage should be checked
-  against fresh transcripts.
+  phrase-boundary term coverage over product fields instead of exact strings,
+  but synonym coverage should be checked against fresh transcripts.
 - Live scorers depend on stable Prometheus readings. Infrastructure failures
   should raise sample errors; they must not be interpreted as model failures.

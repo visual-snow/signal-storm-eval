@@ -142,6 +142,11 @@ def test_term_coverage_is_gradual():
     )
 
 
+def test_term_coverage_uses_token_boundaries():
+    assert term_coverage("teamf telemetry", {"amf"}) == 0.0
+    assert term_coverage("AMF telemetry", {"amf"}) == 1.0
+
+
 def test_component_average_clamps_and_weights():
     assert clamp01(1.5) == 1.0
     assert component_average(
@@ -197,7 +202,7 @@ def test_backoff_ok_too_narrow_spread_fails():
 _SYNONYMS = {"ineffective", "not capped", "ceiling exceeded", "overloaded"}
 
 
-def test_verdict_in_true_on_synonym_substring():
+def test_verdict_in_true_on_synonym_phrase():
     assert verdict_in(_SYNONYMS, '{"verdict": "the setting is ineffective"}') is True
 
 

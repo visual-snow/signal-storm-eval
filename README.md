@@ -10,11 +10,12 @@ It is framed as a **production / mid-horizon** NOC-Bench eval: the deploy
 question is not "can a model do this once?" but "can it do it *every* time?", so
 the intended headline metric is **pass^k** over k epochs, not mean accuracy.
 
-> **Status: work in progress.** The environment (below) is built, booted, and
-> contract-tested. The Inspect task, the agent tools, and the scorers are **not
-> implemented yet**, and **no models have been run** — so there is no results
-> table here. This README documents the use case, the recipe, and the designed
-> task suite; the scoring surface and roster land in a later phase.
+> **Status: product-scoring cleanup built.** The local docker-compose
+> environment, Inspect task, agent tools, and numeric product scorers are
+> implemented. Reference, bad, and partial artifacts for t1..t10 are tested, and
+> offline scorer-anchor calibration is recorded in
+> `docs/product-score-calibration.md`. Fresh product-scored live smoke and roster
+> calibration are still pending.
 
 ## Use case
 
@@ -110,60 +111,59 @@ fork, chosen for a native rate flag, `int` UE ids, and Open5GS v2.7 interop.
 
 Top to bottom the suite walks the operator loop: characterise the storm off the
 live core (t1–t4), recommend standards-consistent flow control (t5–t8), then
-verify it (t9–t10). It was judged **SOLID** (3.8/5) as a design; the graders
-below are the designed scoring surface, not yet implemented.
+verify it (t9–t10). Each task now asks for a concrete JSON product artifact and
+returns a numeric 0.0..1.0 score with component metadata. The old binary
+"did they say X" checks have been replaced with weighted product scorers.
 
 | ID | Task | What it tests | Grader |
 |----|------|---------------|--------|
-| t1 | Report the AMF initial-registration count over the storm interval | counter-scrape arithmetic off live Prometheus | numeric match on the live `reginitreq` counter |
-| t2–t4 | Characterise the storm further off the live counters and NF logs (peak rate, success deficit, storm-vs-normal) | live-state reading + storm quantification | *being finalised — graded against live counters* |
-| t5 | Name the genuine flow-control mechanism, excluding the non-control distractor | mechanism selection (NGAP Overload Start / Traffic Load Reduction vs an AMF load-balancing weight) | Set match against the flow-control mechanism set |
-| t6 | Select the standards-defined overload action | overload-action selection | exact match vs TS 38.413 §9.3.1.105 enumeration |
-| t7 | Size the Traffic Load Reduction percentage that holds the load to target | normative parameter sizing | procedural: any TLR ∈ 1..99 that satisfies the live-peak inequality (TS 38.413 §9.3.1.106) |
-| t8 | Derive a NAS back-off range that de-synchronises the deferred retries | de-sync back-off derivation | procedural: range > 0 and rejected volume / spread within headroom (TS 23.501 §5.19.7) |
-| t9 | Judge whether an undersized TLR setting holds the load | negative case (verdict must be "ineffective") | Composite: verdict + live-state check, synonym-normalised |
-| t10 | Judge whether the no-storm baseline needs any control | negative case (verdict must be "no control needed") | Composite: verdict + live-state check, synonym-normalised |
+| t1 | Registration request-count extract | counter-scrape arithmetic off live Prometheus | weighted count, unit, source-signal, and window score |
+| t2 | Peak registration-rate extract | live-rate measurement and rate-window context | weighted peak-rate, unit, source-signal, and window score |
+| t3 | Registration deficit worksheet | request/success/deficit arithmetic under overload | weighted request, success, deficit, unit, and arithmetic-consistency score |
+| t4 | Storm diagnosis memo | storm verdict backed by live peak and deficit evidence | weighted evidence measurements, verdict, and evidence text |
+| t5 | Flow-control mechanism selection | NGAP Overload Start / TLR vs AMF load-balancing distractor | set F1 plus distractor exclusion and rationale components |
+| t6 | Standards-grounded overload-action recommendation | protected/rejected traffic classes for the action | component coverage for action, protected traffic, rejected traffic, rationale |
+| t7 | Traffic Load Reduction worksheet | sizing TLR against live peak and capacity | live measurement, formula, TLR safety, and range sanity components |
+| t8 | NAS back-off worksheet | desynchronising deferred retries within live capacity | deferred volume, capacity, spread, retry-rate, and safety components |
+| t9 | TLR verification memo | negative case: undersized TLR should fail | given TLR, peak/capacity, residual rate, verdict, evidence components |
+| t10 | Healthy-baseline assessment | negative control: no flow control when idle | baseline peak, deficit, no-action recommendation, evidence components |
 
-> **Open WIP on the suite.** The original design assumed an operator-defined
-> "ceiling" and a third "throttled" world; the environment de-slop removed both
-> (no OSS 5GC enforces flow control). The t7–t10 graders are being re-grounded
-> to score against the **live emergent peak** rather than a baked ceiling, and
-> the t2–t4 read tasks and the t5/t9 synonym sets are being finalised per the
-> judge report. See the [judge report](#more) for the per-task grounding and the
-> three concrete grader improvements still to apply.
+The cleanup audit, formulas, score anchors, and residual risks are in
+`docs/product-based-signal-storm-cleanup.md`.
 
-## Results — not yet run
+## Results
 
-No models have been evaluated. Once the Inspect task and scorers land, this
-section will carry the standard NOC-Bench roster table (Model | Accuracy |
-pass^k | Tokens in/out | $/M in→out | Cost | Time) and the three blueprint
-figures (pass^k decay, reliability gap, capability heatmap), with cost computed
-from the actual `.eval` logs against live OpenRouter prices.
+No fresh product-scored model roster has been run yet. Existing roster logs
+`logs/p5` and `logs/p5b` predate product scoring and are historical only. Local
+scorer-anchor calibration is available in `docs/product-score-calibration.md`;
+each retained task has bad, three partial, and reference anchors with visible
+per-task score spread. The live next step is a guarded one-sample product smoke,
+then an epochs >= 3 roster run for pass^k and per-task model distributions.
 
 ## Reproduce
 
-The environment is reproducible today; the eval is not yet. To boot the world
-and read the emergent storm off the live core (full validated bring-up in the
-recipe's [`LOCAL_BOOT.md`](https://github.com/visual-snow/env_recipes_telco/blob/main/recipes/open5gs_signaling_storm_sandbox/LOCAL_BOOT.md)):
+Offline scorer validation does not start Docker:
 
 ```bash
-# on a Linux k8s cluster with Multus + ovs-cni + a runc RuntimeClass
-# (prepare with the upstream testbed-automator)
-cd recipes/open5gs_signaling_storm_sandbox
-make WORLD=storm up            # base + Prometheus + PacketRusher + subscriber seed
-make test                      # SANDBOX_KUBE_CONTEXT=<ctx> for the cluster tests
-
-# read the storm live: the registration counter climbs under load
-kubectl exec -n open5gs deploy/prometheus -- \
-  wget -qO- 'http://localhost:9090/api/v1/query?query=fivegs_amffunction_rm_reginitreq'
-
-make WORLD=storm down
+uv run pytest tests/test_scorer_logic.py tests/test_product_calibration_report.py -q
+uv run python scripts/generate_product_calibration_report.py docs/product-score-calibration.md
 ```
 
+For the next live smoke, use the guarded wrapper so interrupted runs clean up
+their docker sandboxes:
+
 ```bash
-# once the Inspect task lands (placeholder — not wired yet):
-# uv run inspect eval signal_storm_bench/signal_storm \
-#   --model openrouter/<model> --epochs 3 --log-dir logs/report
+scripts/run_product_smoke.sh openrouter/anthropic/claude-haiku-4.5
+scripts/stop_signal_storm_sandboxes.sh  # cleanup after manual interruption
+```
+
+For a full product-scored roster, run only after budget/runtime is approved:
+
+```bash
+MAX_SANDBOXES=1 bash scripts/run_iteration.sh product-p1 3
+uv run python scripts/check_differentiation.py logs/product-p1
+uv run python scripts/check_kind_differentiation.py logs/product-p1
+uv run python scripts/pass_hat_k.py logs/product-p1
 ```
 
 ## More
@@ -174,5 +174,6 @@ make WORLD=storm down
 - Judge report — `china-unicom-henan-and-zte-simulating-signal-storms-and-sett`
   (NOC-Bench task-bounty review, verdict SOLID 3.8/5): the per-task grounding,
   citation spot-checks, and the open grader improvements.
-- The Inspect task, scorers, `EVALUATION_REPORT.md`, and `TEMPLATE.md`
-  scaffolding land with the next phase.
+- `docs/product-based-signal-storm-cleanup.md` — retained-task rationale,
+  scorer formulas, anchors, and residual risks.
+- `docs/product-score-calibration.md` — offline per-task scorer-anchor spread.

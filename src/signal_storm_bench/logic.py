@@ -108,11 +108,19 @@ def set_f1_score(answer: Iterable[object], expected: Iterable[object]) -> float:
     return 2 * precision * recall / (precision + recall)
 
 
+def contains_normalized_phrase(text: object, phrase: str) -> bool:
+    normalized_text = normalize_verdict(str(text))
+    normalized_phrase = normalize_verdict(phrase)
+    if not normalized_text or not normalized_phrase:
+        return False
+    pattern = rf"(^| ){re.escape(normalized_phrase)}( |$)"
+    return re.search(pattern, normalized_text) is not None
+
+
 def term_coverage(text: object, required_terms: set[str]) -> float:
     if not required_terms:
         return 1.0
-    normalized = normalize_verdict(str(text))
-    hits = sum(1 for term in required_terms if normalize_verdict(term) in normalized)
+    hits = sum(1 for term in required_terms if contains_normalized_phrase(text, term))
     return hits / len(required_terms)
 
 
@@ -160,9 +168,10 @@ def backoff_ok(
 def verdict_in(synonyms: set[str], text: str) -> bool | None:
     """t9/t10 tristate: True if a synonym is present, None when the verdict is unclear.
 
-    Reads the submission "verdict" field; True when any normalised synonym is a
-    substring, otherwise None (an unclear verdict must never score correct, so a
-    content-free submission cannot win by accidentally matching the live probe).
+    Reads the submission "verdict" field; True when any normalised synonym
+    appears as a phrase, otherwise None (an unclear verdict must never score
+    correct, so a content-free submission cannot win by accidentally matching
+    the live probe).
     """
     parsed = parse_submission(text)
     if parsed is None:
@@ -174,6 +183,6 @@ def verdict_in(synonyms: set[str], text: str) -> bool | None:
     if not normalized:
         return None
     for synonym in synonyms:
-        if normalize_verdict(synonym) in normalized:
+        if contains_normalized_phrase(normalized, synonym):
             return True
     return None

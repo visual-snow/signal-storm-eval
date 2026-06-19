@@ -30,11 +30,10 @@ from inspect_ai.solver import TaskState
 from signal_storm_bench.logic import (
     backoff_ok,
     component_average,
-    enum_match,
     normalize_verdict,
     numeric_score,
     parse_submission,
-    set_equal_normalized,
+    set_f1_score,
     term_coverage,
     tlr_holds,
     verdict_in,
@@ -53,6 +52,7 @@ from signal_storm_bench.sandbox_ops import (
 # "AMF load-balancing Weight Factor" is the distractor and must be excluded.
 # Wording matches the published candidate text so a verbatim copy normalizes equal.
 _T5_EXPECTED = ("NGAP Overload Start", "Traffic Load Reduction Indication")
+_T5_DISTRACTOR = "AMF load-balancing Weight Factor"
 
 # t6: TS 38.413 sec 9.3.1.105 Overload Action enumeration value.
 _T6_ACTION = "Permit Emergency Sessions and mobile terminated services only"
@@ -129,6 +129,20 @@ def _window_score(value: object, expected_window: str) -> float:
     if "storm interval" in normalized:
         return 1.0
     return 0.0
+
+
+def _as_list(value: object) -> list[object]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, (tuple, set)):
+        return list(value)
+    return [value]
+
+
+def _joined(value: object) -> str:
+    return " ".join(str(item) for item in _as_list(value))
 
 
 def _product_score(
@@ -284,23 +298,62 @@ def decide(kind: str, completion: str, record: dict, live: LiveState) -> Score:
         )
 
     if kind == "t5":
-        mechanisms = fields.get("mechanisms")
-        ok = isinstance(mechanisms, list) and set_equal_normalized(
-            mechanisms, list(_T5_EXPECTED)
-        )
-        return Score(
-            value=CORRECT if ok else INCORRECT,
-            answer=str(mechanisms),
-            explanation=f"mechanisms={mechanisms} vs expected={list(_T5_EXPECTED)}",
+        mechanisms = _as_list(fields.get("mechanisms"))
+        excluded = _as_list(fields.get("excluded"))
+        selected_text = _joined(mechanisms)
+        components = {
+            "selected_mechanisms": set_f1_score(mechanisms, _T5_EXPECTED),
+            "excluded_distractor": term_coverage(excluded, {_T5_DISTRACTOR}),
+            "no_unsafe_selected_distractor": 0.0
+            if term_coverage(selected_text, {_T5_DISTRACTOR}) == 1.0
+            else 1.0,
+            "rationale": term_coverage(
+                fields.get("rationale"),
+                {"ngap", "traffic load reduction", "flow control"},
+            ),
+        }
+        return _product_score(
+            "t5",
+            fields,
+            components,
+            {
+                "selected_mechanisms": 0.55,
+                "excluded_distractor": 0.15,
+                "no_unsafe_selected_distractor": 0.15,
+                "rationale": 0.15,
+            },
         )
 
     if kind == "t6":
         action = fields.get("overload_action", fields.get("action"))
-        ok = action is not None and enum_match(str(action), _T6_ACTION)
-        return Score(
-            value=CORRECT if ok else INCORRECT,
-            answer=str(action),
-            explanation=f"overload_action={action!r} vs enum={_T6_ACTION!r}",
+        rejected_text = _joined(fields.get("rejected_traffic"))
+        components = {
+            "action": term_coverage(
+                action, {"permit", "emergency", "mobile terminated", "only"}
+            ),
+            "protected_traffic": term_coverage(
+                fields.get("protected_traffic"), {"emergency", "mobile terminated"}
+            ),
+            "rejected_traffic": max(
+                term_coverage(rejected_text, {"non emergency", "mobile originated"}),
+                term_coverage(rejected_text, {"other registrations"}),
+                term_coverage(rejected_text, {"all other"}),
+            ),
+            "rationale": term_coverage(
+                fields.get("rationale"),
+                {"ngap", "overload", "emergency", "mobile terminated"},
+            ),
+        }
+        return _product_score(
+            "t6",
+            fields,
+            components,
+            {
+                "action": 0.25,
+                "protected_traffic": 0.25,
+                "rejected_traffic": 0.25,
+                "rationale": 0.25,
+            },
         )
 
     if kind == "t7":

@@ -267,51 +267,138 @@ class TestT4Product:
 # --- t5/t6: normative graders (no live probe) ---------------------------------
 
 
-class TestT5Mechanisms:
-    def test_genuine_set_verbatim_candidate_scores_correct(self) -> None:
-        # Copying the published candidate wording verbatim must score correct.
+class TestT5Product:
+    def test_reference_scores_high(self) -> None:
         c = json.dumps(
             {
                 "mechanisms": [
                     "NGAP Overload Start",
                     "Traffic Load Reduction Indication",
-                ]
+                ],
+                "excluded": ["AMF load-balancing Weight Factor"],
+                "rationale": (
+                    "NGAP overload control can signal traffic load reduction; "
+                    "load-balancing weight is not a storm flow-control mechanism."
+                ),
             }
         )
-        assert decide("t5", c, STORM_REC, STORM_LIVE).value == CORRECT
+        assert float(decide("t5", c, STORM_REC, STORM_LIVE).value) >= 0.95
 
-    def test_including_distractor_scores_incorrect(self) -> None:
+    def test_one_genuine_mechanism_scores_partial(self) -> None:
+        c = json.dumps(
+            {
+                "mechanisms": ["NGAP Overload Start"],
+                "excluded": ["AMF load-balancing Weight Factor"],
+                "rationale": "NGAP overload and traffic load reduction are flow control.",
+            }
+        )
+        assert_score_between(decide("t5", c, STORM_REC, STORM_LIVE), 0.75, 0.85)
+
+    def test_correct_mechanisms_without_exclusion_scores_partial(self) -> None:
+        c = json.dumps(
+            {
+                "mechanisms": [
+                    "NGAP Overload Start",
+                    "Traffic Load Reduction Indication",
+                ],
+                "excluded": [],
+                "rationale": "NGAP overload and traffic load reduction are flow control.",
+            }
+        )
+        assert_score_between(decide("t5", c, STORM_REC, STORM_LIVE), 0.80, 0.90)
+
+    def test_correct_selection_with_weak_rationale_scores_partial(self) -> None:
+        c = json.dumps(
+            {
+                "mechanisms": [
+                    "NGAP Overload Start",
+                    "Traffic Load Reduction Indication",
+                ],
+                "excluded": ["AMF load-balancing Weight Factor"],
+                "rationale": "these are better choices",
+            }
+        )
+        assert_score_between(decide("t5", c, STORM_REC, STORM_LIVE), 0.82, 0.90)
+
+    def test_unsafe_selected_distractor_scores_low(self) -> None:
         c = json.dumps(
             {
                 "mechanisms": [
                     "NGAP Overload Start",
                     "Traffic Load Reduction Indication",
                     "AMF load-balancing Weight Factor",
-                ]
+                ],
+                "excluded": [],
+                "rationale": "NGAP overload and traffic load reduction are flow control.",
             }
         )
-        assert decide("t5", c, STORM_REC, STORM_LIVE).value == INCORRECT
+        assert_score_between(decide("t5", c, STORM_REC, STORM_LIVE), 0.0, 0.75)
 
 
-class TestT6OverloadAction:
-    def test_exact_enum_scores_correct(self) -> None:
-        c = json.dumps({"overload_action": _T6_ACTION})
-        assert decide("t6", c, STORM_REC, STORM_LIVE).value == CORRECT
-
-    def test_accepts_product_action_during_migration(self) -> None:
+class TestT6Product:
+    def test_reference_scores_high(self) -> None:
         c = json.dumps(
             {
                 "action": _T6_ACTION,
-                "protected_traffic": [],
+                "protected_traffic": [
+                    "emergency sessions",
+                    "mobile terminated services",
+                ],
+                "rejected_traffic": [
+                    "non emergency traffic",
+                    "mobile originated registrations",
+                ],
+                "rationale": (
+                    "NGAP overload control protects emergency and mobile "
+                    "terminated services while rejecting non emergency mobile "
+                    "originated traffic."
+                ),
+            }
+        )
+        assert float(decide("t6", c, STORM_REC, STORM_LIVE).value) >= 0.95
+
+    def test_action_only_scores_partial(self) -> None:
+        c = json.dumps({"action": "permit emergency sessions only"})
+        assert_score_between(decide("t6", c, STORM_REC, STORM_LIVE), 0.15, 0.25)
+
+    def test_protected_traffic_only_scores_partial(self) -> None:
+        c = json.dumps(
+            {
+                "action": "",
+                "protected_traffic": [
+                    "emergency sessions",
+                    "mobile terminated services",
+                ],
                 "rejected_traffic": [],
                 "rationale": "",
             }
         )
-        assert decide("t6", c, STORM_REC, STORM_LIVE).value == CORRECT
+        assert_score_between(decide("t6", c, STORM_REC, STORM_LIVE), 0.20, 0.30)
 
-    def test_wrong_action_scores_incorrect(self) -> None:
-        c = json.dumps({"overload_action": "Reject all sessions"})
-        assert decide("t6", c, STORM_REC, STORM_LIVE).value == INCORRECT
+    def test_action_and_protected_traffic_scores_midrange(self) -> None:
+        c = json.dumps(
+            {
+                "action": _T6_ACTION,
+                "protected_traffic": [
+                    "emergency sessions",
+                    "mobile terminated services",
+                ],
+                "rejected_traffic": [],
+                "rationale": "",
+            }
+        )
+        assert_score_between(decide("t6", c, STORM_REC, STORM_LIVE), 0.45, 0.55)
+
+    def test_reject_answer_scores_low_with_useful_rationale(self) -> None:
+        c = json.dumps(
+            {
+                "action": "reject",
+                "protected_traffic": [],
+                "rejected_traffic": ["all sessions"],
+                "rationale": "overload control is needed",
+            }
+        )
+        assert_score_between(decide("t6", c, STORM_REC, STORM_LIVE), 0.0, 0.25)
 
 
 # --- t7/t8: sized recommendations graded against the live inequality ----------

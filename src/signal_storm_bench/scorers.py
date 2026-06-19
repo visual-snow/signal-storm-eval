@@ -226,6 +226,8 @@ def grade_i4(fields: dict, record: dict, live: LiveState) -> Score:
     return _product_score("i4", fields, components, weights)
 
 
+# i2 is special-cased in decide() (it takes a verdict_score kwarg), so it is
+# deliberately not in this table.
 GRADERS = {"i1": grade_i1, "i3": grade_i3, "i4": grade_i4}
 
 

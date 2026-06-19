@@ -7,6 +7,8 @@ surfaces as a test failure. No sandbox, no model: decide() is pure.
 
 import json
 
+import pytest
+
 from signal_storm_bench import config
 from signal_storm_bench.scorers import LiveState, decide
 
@@ -70,7 +72,7 @@ def test_i3_picking_a_distractor_scores_lower():
         "protected_traffic": list(config.I3_PROTECTED),
         "rejected_traffic": list(config.I3_REJECTED),
     })
-    assert s.value < 0.95
+    assert s.value < 0.90
 
 
 def test_i3_empty_scores_low():
@@ -103,3 +105,10 @@ def test_i4_wrong_measurements_score_low():
                       "backoff_min": 0, "backoff_max": 0,
                       "expected_retry_rate": 1})
     assert s.value <= 0.3
+
+
+# ---- cross-cutting --------------------------------------------------------
+
+def test_unknown_kind_raises():
+    with pytest.raises(ValueError, match="unknown task kind"):
+        decide("i99", '{"x": 1}', STORM_REC, STORM_LIVE)

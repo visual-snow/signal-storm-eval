@@ -87,15 +87,7 @@ scoring range. `tests/test_product_calibration_report.py` asserts every task has
 five anchors, a high reference, a low bad anchor, and at least four distinct
 scores.
 
-The saved roster logs `logs/p5` and `logs/p5b` predate product scoring, so their
-legacy binary scores remain historical only. They are still useful saved
-trajectories: `scripts/generate_saved_log_calibration_report.py` reconstructs
-the live references present in successful legacy scorer explanations and
-rescored their completions with the current product scorer. The resulting
-`docs/saved-log-product-calibration.md` report shows per-task score spread over
-available model outputs, while documenting that old prompt schemas cap many
-scores below reference quality. Samples without enough legacy live references
-are omitted rather than counted as model failures.
+The saved roster logs `logs/p5` and `logs/p5b` predate product scoring, so their legacy binary scores remain historical only.
 
 The guarded product smoke wrote a fresh product-scored success log to
 `logs/product-smoke/2026-06-19T15-19-38-00-00_signal-storm_3hsWR5QsWi6CpWhcHyhhSb.eval`
@@ -119,10 +111,33 @@ a cleanup trap for interrupted docker sandboxes. If a run is manually stopped,
   reviewer cannot yet verify exact source text.
 - Full product-prompt roster calibration across model outputs is still
   budget-dependent. Until a fresh product-scored roster exists, calibration
-  evidence is the local anchor distribution, saved-log rescoring of old
-  successful trajectories, and the one-sample product smoke.
+  evidence is the local anchor distribution and the one-sample product smoke.
 - t5/t6 remain sensitive to terminology. The scorer now grades components and
   phrase-boundary term coverage over product fields instead of exact strings,
   but synonym coverage should be checked against fresh transcripts.
 - Live scorers depend on stable Prometheus readings. Infrastructure failures
   should raise sample errors; they must not be interpreted as model failures.
+
+## v2 reframe: the i1..i4 investigation suite
+
+The suite was refactored from ten typed-JSON tasks (t1..t10) to four agentic
+investigation tasks (i1..i4), scored on deterministic live-state outcomes plus
+one narrow LLM-judge verdict, with no keyword or substring matching. The mapping:
+
+- i1 (storm measurement) folds in the old t1 (request count), t2 (peak rate),
+  and t3 (deficit).
+- i2 (load-state diagnosis) folds in t4 (storm diagnosis) and t10 (healthy
+  baseline). It runs in both a storm and a baseline world, and its one verdict
+  dimension is graded by a temperature-0 LLM judge (Unknown scores 0).
+- i3 (flow-control selection) folds in t5 (mechanism selection) and t6
+  (overload action), expanded to a six-candidate pool with controlled-set
+  traffic classes.
+- i4 (NAS back-off) replaces t8, scored against live-derived ground truth rather
+  than the agent's own self-report.
+- The TLR sizing and verify tasks (t7/t9) are deferred to the follow-up
+  act-and-verify plan (P1).
+
+The earlier keyword and substring verdict matching has been removed; verdicts
+are now graded by the judge dimension or by live-state agreement. The t1..t10
+tables and formulas above are retained as the historical record of the prior
+suite.

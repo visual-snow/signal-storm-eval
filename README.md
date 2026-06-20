@@ -12,10 +12,9 @@ the intended headline metric is **pass^k** over k epochs, not mean accuracy.
 
 > **Status: product-scoring cleanup built.** The local docker-compose
 > environment, Inspect task, agent tools, and numeric product scorers are
-> implemented. Reference, bad, and partial artifacts for t1..t10 are tested, and
+> implemented. Reference, bad, and partial artifacts for i1..i4 are tested, and
 > offline scorer-anchor calibration is recorded in
-> `docs/product-score-calibration.md`. Saved legacy trajectories have also been
-> rescored in `docs/saved-log-product-calibration.md`. A fresh product-scored
+> `docs/product-score-calibration.md`. A fresh product-scored
 > live smoke passed; full product-prompt roster calibration is still pending.
 
 ## Use case
@@ -25,9 +24,7 @@ From the GSMA Foundry library: `china-unicom-henan-and-zte-simulating-signal-sto
 evaluate the peak load on the 5G core, recommend flow-control parameters, and
 verify them before a risky operation (such as a disaster-recovery switchover).
 This eval keeps the operator loop and drops the twin: a real storm is injected
-against a real Open5GS core, the agent characterises it off live metrics
-(t1–t4), recommends NGAP/NAS flow-control parameters (t5–t8), then verifies them
-(t9–t10).
+against a real Open5GS core, the agent measures it off live metrics (i1), diagnoses the load state (i2), selects NGAP/NAS flow control (i3), and sizes the NAS back-off (i4). The apply-and-verify step is a follow-up plan (P1).
 
 Each sample is one step of that loop. Only the **outcome** is graded — the JSON
 answer the agent submitted, checked against the live core state and the
@@ -110,36 +107,26 @@ fork, chosen for a native rate flag, `int` UE ids, and Open5GS v2.7 interop.
 
 ## Task suite
 
-Top to bottom the suite walks the operator loop: characterise the storm off the
-live core (t1–t4), recommend standards-consistent flow control (t5–t8), then
-verify it (t9–t10). Each task now asks for a concrete JSON product artifact and
-returns a numeric 0.0..1.0 score with component metadata. The old binary
-"did they say X" checks have been replaced with weighted product scorers.
+The suite walks the operator's read-only investigation loop: measure the storm off the live core (i1), diagnose the load state in both an overloaded and an idle world (i2), select the flow-control mechanism and overload action (i3), and size the NAS back-off (i4). Each task asks for a concrete JSON product artifact and returns a numeric 0.0..1.0 score with component metadata. The old binary checks were replaced with weighted product scorers.
 
 | ID | Task | What it tests | Grader |
 |----|------|---------------|--------|
-| t1 | Registration request-count extract | counter-scrape arithmetic off live Prometheus | weighted count, unit, source-signal, and window score |
-| t2 | Peak registration-rate extract | live-rate measurement and rate-window context | weighted peak-rate, unit, source-signal, and window score |
-| t3 | Registration deficit worksheet | request/success/deficit arithmetic under overload | weighted request, success, deficit, unit, and arithmetic-consistency score |
-| t4 | Storm diagnosis memo | storm verdict backed by live peak and deficit evidence | weighted evidence measurements, verdict, and evidence text |
-| t5 | Flow-control mechanism selection | NGAP Overload Start / TLR vs AMF load-balancing distractor | set F1 plus distractor exclusion and rationale components |
-| t6 | Standards-grounded overload-action recommendation | protected/rejected traffic classes for the action | component coverage for action, protected traffic, rejected traffic, rationale |
-| t7 | Traffic Load Reduction worksheet | sizing TLR against live peak and capacity | live measurement, formula, TLR safety, and range sanity components |
-| t8 | NAS back-off worksheet | desynchronising deferred retries within live capacity | deferred volume, capacity, spread, retry-rate, and safety components |
-| t9 | TLR verification memo | negative case: undersized TLR should fail | given TLR, peak/capacity, residual rate, verdict, evidence components |
-| t10 | Healthy-baseline assessment | negative control: no flow control when idle | baseline peak, deficit, no-action recommendation, evidence components |
+| i1 | Storm measurement extract | request count, peak rate, successes, and deficit read off live Prometheus | weighted measure() of request_count, peak_rate, success_count, and deficit against the live snapshot |
+| i2 | Load-state diagnosis (storm + baseline worlds) | reading the live load state and whether action is warranted, in both an overloaded and an idle world | deterministic peak/deficit measurement plus a single temperature-0 LLM-judge verdict (Unknown scores 0) |
+| i3 | Flow-control selection | picking the genuine NGAP/NAS overload controls from a candidate pool and naming protected vs shed traffic | set F1 over the correct mechanisms, a distractor penalty, and controlled-set traffic classes |
+| i4 | NAS back-off sizing | sizing a back-off spread that disperses the live backlog within live capacity | live-derived retry-rate consistency and back-off safety against live capacity |
+
+The TLR apply-and-verify task (P1) is built in a follow-up plan; the investigation suite above is the read-only loop. The earlier TLR-sizing and TLR-verify tasks (old t7/t9) are folded into that forthcoming P1.
 
 The cleanup audit, formulas, score anchors, and residual risks are in
 `docs/product-based-signal-storm-cleanup.md`.
 
 ## Results
 
-No fresh product-scored model roster has been run yet. Existing roster logs
-`logs/p5` and `logs/p5b` predate product prompts, but their successful saved
-trajectories have been rescored with the current product scorer in
-`docs/saved-log-product-calibration.md`. Local scorer-anchor calibration is also
-available in `docs/product-score-calibration.md`; each retained task has bad,
-three partial, and reference anchors with visible per-task score spread.
+No fresh product-scored model roster has been run yet. Local scorer-anchor
+calibration is available in `docs/product-score-calibration.md`; each retained
+task has bad, three partial, and reference anchors with visible per-task score
+spread.
 
 A guarded product-scored smoke run succeeded on 2026-06-19:
 `logs/product-smoke/2026-06-19T15-19-38-00-00_signal-storm_3hsWR5QsWi6CpWhcHyhhSb.eval`
@@ -154,7 +141,6 @@ Offline scorer validation does not start Docker:
 ```bash
 uv run pytest tests/test_scorer_logic.py tests/test_product_calibration_report.py -q
 uv run python scripts/generate_product_calibration_report.py docs/product-score-calibration.md
-uv run python scripts/generate_saved_log_calibration_report.py docs/saved-log-product-calibration.md logs/p5 logs/p5b
 ```
 
 To rerun the live smoke, use the guarded wrapper so interrupted runs clean up
@@ -185,5 +171,3 @@ uv run python scripts/pass_hat_k.py logs/product-p1
 - `docs/product-based-signal-storm-cleanup.md` — retained-task rationale,
   scorer formulas, anchors, and residual risks.
 - `docs/product-score-calibration.md` — offline per-task scorer-anchor spread.
-- `docs/saved-log-product-calibration.md` — current product scorer applied to
-  available successful saved trajectories.

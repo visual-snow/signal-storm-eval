@@ -1,9 +1,9 @@
 """Task-wiring invariants for signal_storm (no docker, no model).
 
 Inspects the assembled @task statically: the solver chain must be exactly
-system_message + world_setup + the basic_agent loop; the sandbox must be the
-docker compose tuple pointing at topology/compose.yaml; the message limit must
-default to 50; and `kinds` must filter the dataset for both Inspect -T forms.
+world_setup + the react agent loop; the sandbox must be the docker compose tuple
+pointing at topology/compose.yaml; the message limit must default to 50; and
+`kinds` must filter the dataset for both Inspect -T forms.
 
 Mirrors transport_oam_bench/tests/test_task_wiring.py.
 """
@@ -24,9 +24,8 @@ from signal_storm_bench.task import (
     signal_storm,
 )
 
-# Inspect's default ReAct system message (basic_agent injects this when no
-# `init` is passed). Its presence alongside SYSTEM_PROMPT is the duplication
-# bug this suite guards against.
+# Inspect's default agent system message. Its presence in SYSTEM_PROMPT would be
+# a duplication bug; this suite guards that our domain prompt is used.
 _INSPECT_DEFAULT_PHRASE = "helpful assistant attempting to submit"
 
 
@@ -46,9 +45,8 @@ class TestSolverChainComposition:
     @pytest.mark.parametrize(
         ("registry_name", "expected_count"),
         [
-            pytest.param("inspect_ai/system_message", 1, id="single_system_message"),
             pytest.param("signal_storm_bench/world_setup", 1, id="world_setup_present"),
-            pytest.param("inspect_ai/basic_agent_loop", 1, id="agent_loop_present"),
+            pytest.param("inspect_ai/react", 1, id="react_agent_present"),
         ],
     )
     def test_chain_has_expected_solver_counts(
@@ -56,9 +54,14 @@ class TestSolverChainComposition:
     ) -> None:
         assert chain_names.count(registry_name) == expected_count
 
+    def test_chain_is_exactly_world_setup_then_react(
+        self, chain_names: list[str]
+    ) -> None:
+        assert chain_names == ["signal_storm_bench/world_setup", "inspect_ai/react"]
+
     def test_world_setup_precedes_agent_loop(self, chain_names: list[str]) -> None:
         assert chain_names.index("signal_storm_bench/world_setup") < chain_names.index(
-            "inspect_ai/basic_agent_loop"
+            "inspect_ai/react"
         )
 
     def test_domain_prompt_is_not_inspect_default(self) -> None:
@@ -77,11 +80,12 @@ class TestSandboxAndLimits:
         assert compose.parent.name == "topology"
 
     def test_default_message_limit_is_fifty(self) -> None:
-        # The limit is wired into basic_agent (not the Task), so assert the
-        # public constant and the @task signature default carry 50.
+        # The limit is now set on the Task; assert the public constant, the @task
+        # signature default, and the built Task all carry 50.
         assert DEFAULT_MESSAGE_LIMIT == 50
         default = inspect.signature(signal_storm).parameters["message_limit"].default
         assert default == 50
+        assert signal_storm().message_limit == 50
 
 
 def test_task_builds_five_sample_investigation_suite():
@@ -93,6 +97,20 @@ def test_task_builds_five_sample_investigation_suite():
 def test_judge_default_model_is_declared():
     from signal_storm_bench.scorers import DEFAULT_JUDGE_MODEL
     assert DEFAULT_JUDGE_MODEL == "anthropic/claude-haiku-4-5-20251001"
+
+
+def test_budget_aware_continue_forces_submit_near_limit():
+    import asyncio
+    from types import SimpleNamespace
+
+    from signal_storm_bench.task import budget_aware_continue
+
+    on_continue = budget_aware_continue(50)  # urge threshold = 50 - 12 = 38
+    # well under budget: let the loop continue
+    assert asyncio.run(on_continue(SimpleNamespace(messages=[0] * 10))) is True
+    # near the limit: inject a forced-submission message
+    out = asyncio.run(on_continue(SimpleNamespace(messages=[0] * 40)))
+    assert isinstance(out, str) and "{submit}" in out
 
 
 class TestKindsFilter:

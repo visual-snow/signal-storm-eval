@@ -116,18 +116,6 @@ def contains_normalized_phrase(text: object, phrase: str) -> bool:
     return re.search(pattern, normalized_text) is not None
 
 
-def matches_any_phrase(text: object, phrases: Iterable[str]) -> bool:
-    """True when any phrase appears in text as a whole-token phrase.
-
-    The shared verdict matcher: t4/t9/t10 all ask "does the model's wording
-    contain one of these judgment phrases?". Empty text matches nothing.
-    """
-    normalized = normalize_verdict(str(text))
-    if not normalized:
-        return False
-    return any(contains_normalized_phrase(normalized, phrase) for phrase in phrases)
-
-
 def term_coverage(text: object, required_terms: set[str]) -> float:
     if not required_terms:
         return 1.0

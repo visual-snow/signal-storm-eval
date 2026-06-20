@@ -13,7 +13,6 @@ from signal_storm_bench.logic import (
     clamp01,
     component_average,
     controlled_set_score,
-    matches_any_phrase,
     measure,
     normalize_verdict,
     numeric_score,
@@ -130,12 +129,6 @@ def test_term_coverage_is_gradual():
 def test_term_coverage_uses_token_boundaries():
     assert term_coverage("teamf telemetry", {"amf"}) == 0.0
     assert term_coverage("AMF telemetry", {"amf"}) == 1.0
-
-
-def test_matches_any_phrase():
-    assert matches_any_phrase("the setting is ineffective", {"ineffective"})
-    assert not matches_any_phrase("it works fine", {"ineffective"})
-    assert not matches_any_phrase("", {"ineffective"})
 
 
 def test_component_average_clamps_and_weights():

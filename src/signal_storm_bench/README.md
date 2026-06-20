@@ -14,12 +14,15 @@ Contributed by [@emolero](https://github.com/emolero)
 
 ## Dataset
 
-The dataset has one sample per step of the storm loop:
+The dataset is five samples across the four investigation tasks:
 
-- t1..t4 characterize the live storm from Prometheus metrics.
-- t5..t8 select and size NGAP/NAS flow-control products.
-- t9 verifies an undersized TLR setting against live capacity.
-- t10 checks the healthy baseline and should recommend no flow control.
+- i1 measures the live storm (request count, peak rate, successes, deficit)
+  from Prometheus metrics.
+- i2 diagnoses the load state and runs in both a storm and a baseline world,
+  so it contributes two samples.
+- i3 selects the genuine NGAP/NAS overload controls from a candidate pool and
+  names the protected and shed traffic.
+- i4 sizes the NAS back-off so deferred retries disperse within live capacity.
 
 Each prompt requests a concrete JSON artifact. Hidden live thresholds, final
 answers, scorer weights, and reference artifacts are not shown to the agent.

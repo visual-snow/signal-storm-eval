@@ -6,5 +6,4 @@ ip link set ogstun up;
 sh -c "echo 1 > /proc/sys/net/ipv4/ip_forward";
 iptables -t nat -A POSTROUTING -s 10.41.0.0/16 ! -o ogstun -j MASQUERADE;
 
-# sleep 604800
 /open5gs/config/run.sh

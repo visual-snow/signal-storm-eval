@@ -139,27 +139,6 @@ def check_get_model_location(eval_path: Path, report: LintReport) -> None:
         )
 
 
-class TaskParameterVisitor(ast.NodeVisitor):
-    """AST visitor to find @task decorated functions and their parameters."""
-
-    def __init__(self) -> None:
-        self.tasks: list[tuple[str, int, set[str]]] = []  # (name, line, params)
-
-    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
-        """Visit function definition, checking for @task decorator."""
-        is_task = any(_get_decorator_name(d) == "task" for d in node.decorator_list)
-
-        if is_task:
-            params = set()
-            for arg in node.args.args:
-                params.add(arg.arg)
-            for arg in node.args.kwonlyargs:
-                params.add(arg.arg)
-            self.tasks.append((node.name, node.lineno, params))
-
-        self.generic_visit(node)
-
-
 class SampleIdVisitor(ast.NodeVisitor):
     """AST visitor to find Sample() calls and check for id= parameter."""
 

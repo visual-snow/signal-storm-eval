@@ -59,7 +59,6 @@ class PosixCodeChecker(ast.NodeVisitor):
         self,
         lineno: int,
         end_lineno: int | None = None,
-        error_code: str | None = None,
     ) -> bool:
         """Check if a line should be ignored based on noqa comments."""
         if not self.source_lines:
@@ -84,11 +83,7 @@ class PosixCodeChecker(ast.NodeVisitor):
         end_lineno: int | None = None,
     ):
         """Add a violation if the line is not ignored."""
-        # Extract error code from message (e.g., "POSIX001" from the message)
-        error_code_match = re.match(r"^(POSIX\d+)", message)
-        error_code = error_code_match.group(1) if error_code_match else None
-
-        if not self._is_line_ignored(lineno, end_lineno, error_code):
+        if not self._is_line_ignored(lineno, end_lineno):
             self.violations.append((lineno, col_offset, message))
 
     def visit_Attribute(self, node):

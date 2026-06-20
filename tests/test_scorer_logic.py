@@ -19,10 +19,8 @@ STORM_LIVE = LiveState(
     capacity_rate=70.0,
     rejected_volume=4200.0,
 )
-IDLE_LIVE = LiveState(baseline_peak_rate=0.0, rejected_volume=0.0)
 
 STORM_REC = {"storm": {"storm_interval": config.STORM_INTERVAL}}
-BASELINE_REC = {"baseline": {}}
 
 
 def _score(kind, fields, rec=STORM_REC, live=STORM_LIVE, verdict_score=None):

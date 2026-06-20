@@ -19,7 +19,6 @@ from signal_storm_bench.config import KINDS, PASS_THRESHOLD
 # Sampling policy: per model, export one scored model-output transcript per kind,
 # preferring low scores when available. Infrastructure/sample errors stay in the
 # run summary; they are not sampled as model failures.
-PER_MODEL_CAP = 4
 
 
 def _short_model(model: str) -> str:

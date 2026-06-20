@@ -114,7 +114,6 @@ module = [
     "export_gate_artifacts",
     "generate_product_calibration_report",
     "generate_readmes",
-    "generate_saved_log_calibration_report",
     "pass_hat_k",
 ]
 ignore_missing_imports = true

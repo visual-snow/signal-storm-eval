@@ -1,9 +1,14 @@
 """Agent-facing tools: read the live storm and the core config (P3).
 
-Four named actions wrapping signal_storm_bench.sandbox_ops: query the live
-registration counters off Prometheus, read the AMF config, read an NF log file,
-and replay the registration storm. Tools return live state and surface command
-failures as text (never raised); ground truth stays hidden in sample metadata.
+Three read-only actions wrapping signal_storm_bench.sandbox_ops: query the live
+registration counters off Prometheus, read the AMF config, and read an NF log
+file. Tools return live state and surface command failures as text (never
+raised); ground truth stays hidden in sample metadata.
+
+The suite is a read-only investigation loop, so it deliberately exposes no
+world-mutating tool: the storm is fired once at handoff (solvers.world_setup) and
+the ground truth is frozen there, so the agent reads the core but cannot change
+the counters it is graded against.
 """
 
 import json
@@ -104,46 +109,9 @@ def read_nf_log_file() -> Tool:
     return execute
 
 
-@tool
-def run_ue_storm_simulator() -> Tool:
-    """Replay or extend the UE registration storm against the AMF."""
-
-    async def execute(rate: int, ue_count: int, duration_s: int) -> str:
-        """Drive a UE registration storm via the PacketRusher injector.
-
-        Use this to replay or extend the storm: it registers ue_count UEs at
-        rate registrations/second for up to duration_s seconds, over real
-        NGAP-over-SCTP. This call blocks until the storm finishes. The counters
-        in Prometheus stand afterward; re-query them to read the new state. The
-        storm already fired before you started; to reproduce it faithfully use
-        rate=120, ue_count=6000, duration_s=90.
-
-        Args:
-            rate: Registration attempts per second (0 means no storm)
-            ue_count: Number of UEs to register
-            duration_s: Maximum storm duration in seconds
-
-        Returns:
-            The injector output; an injection failure is returned, not raised
-        """
-        try:
-            result = await sandbox_ops.run_storm(
-                rate=rate,
-                ue_count=ue_count,
-                duration_s=duration_s,
-                timeout=duration_s + 60,
-            )
-        except RuntimeError as e:
-            return f"[storm injection failed]\n{e}"
-        return result.stdout
-
-    return execute
-
-
 def agent_tools() -> list[Tool]:
     return [
         query_prometheus_metrics(),
         read_amf_config(),
         read_nf_log_file(),
-        run_ue_storm_simulator(),
     ]

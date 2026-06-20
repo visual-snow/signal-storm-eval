@@ -156,6 +156,38 @@ async def rejected_volume(window: str) -> float:
     return await _query_scalar(promql)
 
 
+# Key under which world_setup freezes the live snapshot in the per-sample store.
+# The scorer grades against this frozen snapshot, never a fresh read at grade
+# time, so an agent action during the episode (e.g. re-firing the storm) cannot
+# move the ground truth it is graded against.
+LIVE_SNAPSHOT_KEY = "live_snapshot"
+
+
+async def capture_live_snapshot(windows: dict) -> dict[str, float]:
+    """Read the full live-state snapshot once, for freezing at handoff.
+
+    Probes every counter any kind grades against (count, peak, deficit, capacity)
+    in one shot over the world's windows. world_setup calls this after the world
+    is prepared and stashes the result in the sample store, so the scorer reads
+    frozen ground truth instead of querying live after the agent has acted.
+    """
+    interval = windows["storm_interval"]
+    peak_window = windows["peak_window"]
+    step = windows["scrape_interval_s"]
+    count, peak, deficit, cap = await asyncio.gather(
+        live_count(interval),
+        live_peak_rate(interval, peak_window, step),
+        rejected_volume(interval),
+        capacity_rate(interval, peak_window, step),
+    )
+    return {
+        "live_count": count,
+        "live_peak_rate": peak,
+        "rejected_volume": deficit,
+        "capacity_rate": cap,
+    }
+
+
 # --- Storm injection + gates -----------------------------------------------
 
 

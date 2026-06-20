@@ -16,7 +16,6 @@ never raise. i2 verdict matching is judgment-bearing (precomputed by async judge
 the rest are pure numeric.
 """
 
-import asyncio
 import json
 from dataclasses import dataclass
 
@@ -45,12 +44,7 @@ from signal_storm_bench.logic import (
     set_f1_score,
     term_coverage,
 )
-from signal_storm_bench.sandbox_ops import (
-    capacity_rate,
-    live_count,
-    live_peak_rate,
-    rejected_volume,
-)
+from signal_storm_bench.sandbox_ops import LIVE_SNAPSHOT_KEY
 
 # The i2 load-state judge defaults to Anthropic Haiku; override at run time with
 # --model-roles judge=... (the role takes precedence over this default).
@@ -61,8 +55,8 @@ DEFAULT_JUDGE_MODEL = "anthropic/claude-haiku-4-5-20251001"
 class LiveState:
     """Snapshot of the live core state the per-kind graders consume.
 
-    Probed off Prometheus at grade time; only the fields a kind needs are read,
-    the rest keep safe zero defaults.
+    Frozen at handoff by world_setup and read back from the sample store at grade
+    time; only the fields a kind needs are read, the rest keep safe zero defaults.
     """
 
     live_count: float = 0.0
@@ -300,50 +294,28 @@ async def judge_load_state(
     return judge_verdict_score(reply.completion, expected_state)
 
 
-async def _gather_live_state(kind: str, record: dict) -> LiveState:
-    """Probe only what the kind needs; default the rest to zero.
+def _frozen_live_state(state: TaskState) -> LiveState:
+    """Read back the snapshot world_setup froze at handoff.
 
-    i2 runs in both worlds: in the storm world the live peak/deficit are read as
-    usual; in the baseline world the same windows read an idle peak (~0) and no
-    deficit, which is the negative case the verdict must reach.
+    Grading reads this frozen ground truth, never a fresh Prometheus query, so an
+    agent action during the episode cannot move the numbers it is graded against.
+    A missing snapshot means world_setup did not run before scoring: an infra/
+    wiring fault, which raises (and errors the sample) rather than scoring a model.
     """
-    if kind == "i3":
-        # Normative-only selection grader needs no live probe.
-        return LiveState()
-
-    world = record.get("world", "storm")
-    windows = record["baseline"] if world == "baseline" else record["storm"]
-    interval = windows["storm_interval"]
-    peak_window = windows["peak_window"]
-    step = windows["scrape_interval_s"]
-
-    if kind == "i1":
-        count, peak, deficit = await asyncio.gather(
-            live_count(interval),
-            live_peak_rate(interval, peak_window, step),
-            rejected_volume(interval),
+    snapshot = state.store.get(LIVE_SNAPSHOT_KEY)
+    if snapshot is None:
+        raise RuntimeError(
+            "live snapshot missing from the sample store; world_setup must run "
+            "and freeze the snapshot before scoring"
         )
-        return LiveState(live_count=count, live_peak_rate=peak, rejected_volume=deficit)
-    if kind == "i2":
-        peak, deficit = await asyncio.gather(
-            live_peak_rate(interval, peak_window, step),
-            rejected_volume(interval),
-        )
-        return LiveState(live_peak_rate=peak, rejected_volume=deficit)
-    if kind == "i4":
-        deficit, cap = await asyncio.gather(
-            rejected_volume(interval),
-            capacity_rate(interval, peak_window, step),
-        )
-        return LiveState(rejected_volume=deficit, capacity_rate=cap)
-    return LiveState()
+    return LiveState(**snapshot)
 
 
 @scorer(metrics=[mean(), stderr()])
 def signal_storm_scorer() -> Scorer:
     async def score(state: TaskState, target: Target) -> Score:
         kind = state.metadata["task_kind"]
-        live = await _gather_live_state(kind, state.metadata)
+        live = _frozen_live_state(state)
         verdict_score: float | None = None
         if kind == "i2":
             verdict_score = await judge_load_state(

@@ -4,8 +4,8 @@
 #   idle   (default container command) renders /tmp/config.yml from the identity +
 #          storm-params env, then sleeps forever so the eval can exec storms on demand.
 #
-#   run    (invoked by run_ue_storm_simulator via `compose exec packetrusher
-#          /storm.sh run`) runs ONE storm: multi-ue registers UE_COUNT UEs, one every
+#   run    (invoked by world_setup via sandbox_ops.run_storm, i.e. `compose exec
+#          packetrusher /storm.sh run`) runs ONE storm: multi-ue registers UE_COUNT UEs, one every
 #          1000/STORM_RATE ms (=> STORM_RATE reg/s), bounded by timeout -s INT
 #          DURATION_S for a clean deregistering stop. STORM_RATE=0 is the baseline
 #          world: no storm, just sleep DURATION_S so the AMF counter stays ~0.

@@ -14,6 +14,8 @@ from inspect_ai.solver import Generate, Solver, TaskState, solver
 
 from signal_storm_bench.config import MIN_STORM_PEAK_RATE
 from signal_storm_bench.sandbox_ops import (
+    LIVE_SNAPSHOT_KEY,
+    capture_live_snapshot,
     run_storm,
     wait_for_boot,
     wait_storm_manifest,
@@ -25,6 +27,16 @@ from signal_storm_bench.sandbox_ops import (
 STORM_ATTEMPTS = 3
 
 
+async def _freeze_snapshot(state: TaskState, windows: dict) -> None:
+    """Snapshot the live ground truth at handoff and store it for the scorer.
+
+    The scorer grades against this frozen snapshot, so an agent action during the
+    episode (e.g. re-firing the storm) cannot move the ground truth it is graded
+    against. Called once per sample, after the world is prepared.
+    """
+    state.store.set(LIVE_SNAPSHOT_KEY, await capture_live_snapshot(windows))
+
+
 @solver
 def world_setup() -> Solver:
     async def solve(state: TaskState, generate: Generate) -> TaskState:
@@ -33,6 +45,8 @@ def world_setup() -> Solver:
         if world == "baseline":
             # No-storm negative case (t10): leave the injector idle so the
             # counters stay flat and the live peak reads below the idle band.
+            # Freeze the idle snapshot so the scorer grades the negative case.
+            await _freeze_snapshot(state, state.metadata["baseline"])
             return state
         # Storm world (t1..t9): fire the pinned storm so the counters stand, then
         # gate on a severe overload before handing control to the agent. Replay if
@@ -50,6 +64,8 @@ def world_setup() -> Solver:
                 storm["peak_window"],
                 storm["scrape_interval_s"],
             ):
+                # Freeze ground truth now, before the agent can touch the core.
+                await _freeze_snapshot(state, storm)
                 return state
         raise RuntimeError(
             f"storm failed to overload the AMF after {STORM_ATTEMPTS} attempts "

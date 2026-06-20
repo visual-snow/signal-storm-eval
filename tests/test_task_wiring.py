@@ -94,6 +94,22 @@ def test_task_builds_five_sample_investigation_suite():
     assert len(t.dataset) == 5
 
 
+def test_agent_tools_are_read_only_no_storm_injector():
+    # The suite is a read-only investigation loop: the ground truth is frozen at
+    # handoff, so the agent must have no world-mutating tool. A storm injector in
+    # the toolset would let the agent re-fire the storm and corrupt the very
+    # counters it is graded against.
+    from signal_storm_bench.tools import agent_tools
+
+    # leaf names (registry names are prefixed with the package "signal_storm_bench")
+    leaves = {registry_info(t).name.rsplit("/", 1)[-1] for t in agent_tools()}
+    assert leaves == {
+        "query_prometheus_metrics",
+        "read_amf_config",
+        "read_nf_log_file",
+    }
+
+
 def test_judge_default_model_is_declared():
     from signal_storm_bench.scorers import DEFAULT_JUDGE_MODEL
     assert DEFAULT_JUDGE_MODEL == "anthropic/claude-haiku-4-5-20251001"

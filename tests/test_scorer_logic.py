@@ -5,13 +5,11 @@ onto a score, so the score distribution is reproducible and a grading drift
 surfaces as a test failure. No sandbox, no model: decide() is pure.
 """
 
-import asyncio
 import json
-from unittest.mock import patch
 
 import pytest
 
-from signal_storm_bench import config, scorers
+from signal_storm_bench import config
 from signal_storm_bench.scorers import LiveState, decide, judge_verdict_score
 
 # Live snapshots the graders read (synthetic; no docker, no model).
@@ -162,52 +160,6 @@ def test_i4_wrong_measurements_score_low():
 def test_unknown_kind_raises():
     with pytest.raises(ValueError, match="unknown task kind"):
         decide("i99", '{"x": 1}', STORM_REC, STORM_LIVE)
-
-
-def test_gather_live_state_i2_reads_world_specific_peak():
-    async def fake_peak(*a, **k):
-        return 110.0
-
-    async def fake_deficit(*a, **k):
-        return 4200.0
-
-    with (
-        patch.object(scorers, "live_peak_rate", fake_peak),
-        patch.object(scorers, "rejected_volume", fake_deficit),
-    ):
-        rec = {
-            "world": "storm",
-            "storm": {
-                "storm_interval": "5m",
-                "peak_window": "30s",
-                "scrape_interval_s": 5,
-            },
-        }
-        live = asyncio.run(scorers._gather_live_state("i2", rec))
-    assert live.live_peak_rate == 110.0 and live.rejected_volume == 4200.0
-
-
-def test_gather_live_state_i2_baseline_world_reads_baseline_windows():
-    async def fake_peak(*a, **k):
-        return 0.0
-
-    async def fake_deficit(*a, **k):
-        return 0.0
-
-    with (
-        patch.object(scorers, "live_peak_rate", fake_peak),
-        patch.object(scorers, "rejected_volume", fake_deficit),
-    ):
-        rec = {
-            "world": "baseline",
-            "baseline": {
-                "storm_interval": "5m",
-                "peak_window": "30s",
-                "scrape_interval_s": 5,
-            },
-        }
-        live = asyncio.run(scorers._gather_live_state("i2", rec))
-    assert live.live_peak_rate == 0.0 and live.rejected_volume == 0.0
 
 
 # ---- i2 judge -----------------------------------------------------------------

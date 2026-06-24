@@ -1,0 +1,36 @@
+signal_storm_bench
+Copyright (c) 2025 Open-Telco contributors
+
+This product includes software and configuration adapted from the projects
+below. Each is used under its own license; this NOTICE records attribution.
+
+-------------------------------------------------------------------------------
+Open5GS on Kubernetes (Open5GS all-in-one configs)
+  Project:   niloysh/open5gs-k8s
+  Copyright: (c) Niloy Saha and the open5gs-k8s contributors
+  Source:    https://github.com/niloysh/open5gs-k8s
+  Files:     Open5GS AIO core configuration vendored under
+             src/signal_storm_bench/topology/
+
+-------------------------------------------------------------------------------
+PacketRusher (5G core load / signalling-storm injector)
+  Project:   HewlettPackard/PacketRusher
+  Copyright: (c) Hewlett Packard Enterprise and the PacketRusher contributors
+  Source:    https://github.com/HewlettPackard/PacketRusher
+  Files:     storm injector used to flood the AMF with NGAP/NAS registrations
+
+-------------------------------------------------------------------------------
+Prometheus (metrics scrape of the AMF endpoint)
+  Project:   prom/prometheus
+  Copyright: (c) The Prometheus Authors
+  Source:    https://github.com/prometheus/prometheus
+  Files:     Prometheus server and scrape configuration in the sandbox
+
+-------------------------------------------------------------------------------
+transport_oam_bench scaffolding and scripts
+  Project:   visual-snow/zhejiang-transport-eval (transport_oam_bench)
+  Copyright: (c) the zhejiang-transport-eval contributors
+  Source:    https://github.com/visual-snow/zhejiang-transport-eval
+  Files:     repository scaffolding adapted across this repo -- pyproject.toml,
+             Makefile, tools/, src/utils/, src/examples/, scripts/, tests/
+             scaffolding, .claude/, and the build-loop chrome

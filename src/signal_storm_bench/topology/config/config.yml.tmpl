@@ -1,0 +1,59 @@
+# PacketRusher config TEMPLATE (its config.go schema). Rendered at injector startup
+# with envsubst from the identity + storm-params env, so the gNB/UE keys, slice, AMF
+# endpoint and MSIN base are exactly the seeded ones (single source of identity).
+#
+# Vendored from overlays/common/injector.yaml (injector-config ConfigMap). The ONLY
+# change for the compose world: the gNB control/data interface and the AMF NGAP target
+# ride n2network (10.10.2.x) instead of n3 (10.10.3.x), because the AIO AMF binds NGAP
+# on 10.10.2.2 (config/amf.yaml amf.ngap.server[0].address) rather than the k8s NAD's
+# 10.10.3.200. The injector container takes the static n2 IP 10.10.2.50 in compose.yaml.
+#
+# amfif is a LIST; snssai.sst is an int while slicesupportlist.sst is a string
+# (PacketRusher config.go field types).
+gnodeb:
+  controlif:
+    ip: "10.10.2.50"
+    port: 9487
+  dataif:
+    ip: "10.10.2.50"
+    port: 2152
+  plmnlist:
+    mcc: "${MCC}"
+    mnc: "${MNC}"
+    tac: "000001"
+    gnbid: "000008"   # arbitrary gNB-local ids, not subscriber identities
+  slicesupportlist:
+    sst: "${SST_STR}"
+    sd: "${SD}"
+ue:
+  hplmn:
+    mcc: "${MCC}"
+    mnc: "${MNC}"
+  msin: "${MSIN_BASE}"
+  routingindicator: "0000"
+  protectionScheme: 0
+  homeNetworkPublicKey: "5a8d38864820197c3394b92613b20b91633cbd897119273bf8e4a6f4eec0a650"
+  homeNetworkPublicKeyID: 1
+  key: "${KEY}"
+  opc: "${OPC}"
+  amf: "${AMF_FIELD}"
+  sqn: "00000000"
+  dnn: "internet"
+  snssai:
+    sst: ${SST}
+    sd: "${SD}"
+  integrity:
+    nia0: false
+    nia1: false
+    nia2: true
+    nia3: false
+  ciphering:
+    nea0: true
+    nea1: false
+    nea2: true
+    nea3: false
+amfif:
+  - ip: "${AMF_NGAP_IP}"
+    port: ${AMF_NGAP_PORT}
+logs:
+  level: 4

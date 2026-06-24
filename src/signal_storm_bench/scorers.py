@@ -1,0 +1,328 @@
+"""Outcome-led scorers, faithful to the submission grader contracts.
+
+Each investigation kind has its own small grader (grade_i1, grade_i2, grade_i3,
+grade_i4); they are pure, consuming the parsed submission plus a LiveState
+snapshot, so every grading rule unit-tests without docker. decide() parses the
+submission once and dispatches to the kind's grader through the GRADERS table.
+signal_storm_scorer() gathers the LiveState by probing only what the kind needs,
+reads ground truth off Sample.metadata and config.py, then calls decide.
+Infrastructure faults raise RuntimeError (the sample errors, never a binary
+incorrect label, per the guide).
+
+Grading is outcome-only: the agent's JSON answer is checked against live core
+state (Prometheus counters off the running AMF) and the normative NGAP/NAS bounds
+in config.py; never the path the agent took. Unparseable submissions score 0 and
+never raise. i2 verdict matching is judgment-bearing (precomputed by async judge);
+the rest are pure numeric.
+"""
+
+import json
+from dataclasses import dataclass
+
+from inspect_ai.model import GenerateConfig, Model, get_model
+from inspect_ai.scorer import (
+    Score,
+    Scorer,
+    Target,
+    mean,
+    scorer,
+    stderr,
+)
+from inspect_ai.solver import TaskState
+
+from signal_storm_bench import config
+from signal_storm_bench.logic import (
+    as_float,
+    clamp01,
+    component_average,
+    controlled_set_score,
+    measure,
+    numeric_score,
+    parse_judge_grade,
+    parse_submission,
+    rel_scale,
+    set_f1_score,
+    term_coverage,
+)
+from signal_storm_bench.sandbox_ops import LIVE_SNAPSHOT_KEY
+
+# The i2 load-state judge defaults to Anthropic Haiku; override at run time with
+# --model-roles judge=... (the role takes precedence over this default).
+DEFAULT_JUDGE_MODEL = "anthropic/claude-haiku-4-5-20251001"
+
+
+@dataclass(frozen=True)
+class LiveState:
+    """Snapshot of the live core state the per-kind graders consume.
+
+    Frozen at handoff by world_setup and read back from the sample store at grade
+    time; only the fields a kind needs are read, the rest keep safe zero defaults.
+    """
+
+    live_count: float = 0.0
+    live_peak_rate: float = 0.0
+    capacity_rate: float = 0.0
+    rejected_volume: float = 0.0
+    baseline_peak_rate: float = 0.0
+
+
+# --- small grading helpers -------------------------------------------------
+
+
+def _as_list(value: object) -> list[object]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, (tuple, set)):
+        return list(value)
+    return [value]
+
+
+def _joined(value: object) -> str:
+    return " ".join(str(item) for item in _as_list(value))
+
+
+def _product_score(
+    kind: str,
+    fields: dict,
+    components: dict[str, float],
+    weights: dict[str, float],
+    cap: float | None = None,
+    extra_metadata: dict | None = None,
+) -> Score:
+    """Combine weighted components into one 0..1 product Score.
+
+    cap, when given, is the most the score can be (a safety penalty).
+    extra_metadata is merged into the Score metadata.
+    """
+    score = component_average(components, weights)
+    if cap is not None:
+        score = min(score, cap)
+    metadata = {"components": components}
+    if extra_metadata:
+        metadata.update(extra_metadata)
+    return Score(
+        value=score,
+        answer=json.dumps(fields, sort_keys=True),
+        explanation=f"{kind} product score={score:.3f}; components={components}",
+        metadata=metadata,
+    )
+
+
+# --- per-task graders ------------------------------------------------------
+#
+# Each grader is pure: (parsed submission, sample metadata, live snapshot) -> a
+# Score. measure(submitted, live_value[, tolerance]) is full credit at the live
+# value, fading out over the tolerance fraction of it.
+
+
+def grade_i1(fields: dict, record: dict, live: LiveState) -> Score:
+    """Storm measurement extract: request count, peak rate, successes, deficit."""
+    success_ref = live.live_count - live.rejected_volume
+    components = {
+        "request_count": measure(fields.get("request_count"), live.live_count, 0.10),
+        "peak_rate": measure(fields.get("peak_rate"), live.live_peak_rate),
+        "success_count": measure(fields.get("success_count"), success_ref, 0.10),
+        "deficit": measure(fields.get("deficit"), live.rejected_volume, 0.10),
+    }
+    weights = {
+        "request_count": 0.25,
+        "peak_rate": 0.30,
+        "success_count": 0.20,
+        "deficit": 0.25,
+    }
+    return _product_score("i1", fields, components, weights)
+
+
+def grade_i2(
+    fields: dict, record: dict, live: LiveState, verdict_score: float = 0.0
+) -> Score:
+    """Load-state diagnosis: measured evidence (deterministic) + judge verdict.
+
+    verdict_score is precomputed by the async judge in the scorer (1.0 if the
+    agent's load_state agrees with the live-forced state, 0.0 otherwise/Unknown).
+    The measurement components are graded against the live snapshot of the world
+    this sample ran in (storm or baseline).
+    """
+    components = {
+        "peak_rate": measure(fields.get("peak_rate"), live.live_peak_rate),
+        "deficit": measure(fields.get("deficit"), live.rejected_volume, 0.10),
+        "verdict": clamp01(verdict_score),
+    }
+    weights = {"peak_rate": 0.30, "deficit": 0.30, "verdict": 0.40}
+    return _product_score("i2", fields, components, weights)
+
+
+def grade_i3(fields: dict, record: dict, live: LiveState) -> Score:
+    """Flow-control selection: mechanisms (vs distractors) + traffic classes."""
+    mechanisms = _as_list(fields.get("mechanisms"))
+    components = {
+        "selected_mechanisms": set_f1_score(mechanisms, config.I3_CORRECT),
+        "no_distractor_selected": 1.0
+        - term_coverage(_joined(mechanisms), set(config.I3_DISTRACTORS)),
+        "protected_traffic": controlled_set_score(
+            _as_list(fields.get("protected_traffic")), config.I3_PROTECTED
+        ),
+        "rejected_traffic": controlled_set_score(
+            _as_list(fields.get("rejected_traffic")),
+            config.I3_REJECTED,
+            unsafe=config.I3_PROTECTED,
+        ),
+    }
+    weights = {
+        "selected_mechanisms": 0.40,
+        "no_distractor_selected": 0.20,
+        "protected_traffic": 0.20,
+        "rejected_traffic": 0.20,
+    }
+    return _product_score("i3", fields, components, weights)
+
+
+def grade_i4(fields: dict, record: dict, live: LiveState) -> Score:
+    """NAS back-off dispersion sized against the live backlog and capacity.
+
+    Scored against live-derived ground truth, not the agent's own submission:
+    the resulting retry rate is the live backlog over the submitted spread, and
+    safety is that rate staying within the live capacity.
+    """
+    bmin = as_float(fields.get("backoff_min"))
+    bmax = as_float(fields.get("backoff_max"))
+    spread = bmax - bmin if bmin is not None and bmax is not None else 0.0
+    resulting_rate = live.rejected_volume / spread if spread > 0 else None
+    expected = as_float(fields.get("expected_retry_rate"))
+
+    retry_consistency = (
+        numeric_score(expected, resulting_rate, rel_scale(live.capacity_rate, 0.25))
+        if resulting_rate is not None and expected is not None
+        else 0.0
+    )
+    if resulting_rate is None:
+        backoff_safety = 0.0
+    elif resulting_rate <= live.capacity_rate:
+        backoff_safety = 1.0
+    else:
+        backoff_safety = numeric_score(
+            resulting_rate, live.capacity_rate, rel_scale(live.capacity_rate, 1.0)
+        )
+    components = {
+        "deferred_volume": measure(
+            fields.get("deferred_volume"), live.rejected_volume, 0.10
+        ),
+        "capacity_measurement": measure(
+            fields.get("capacity_rate"), live.capacity_rate
+        ),
+        "spread_present": 1.0 if spread > 0 else 0.0,
+        "retry_rate_consistency": retry_consistency,
+        "backoff_safety": backoff_safety,
+    }
+    weights = {
+        "deferred_volume": 0.15,
+        "capacity_measurement": 0.20,
+        "spread_present": 0.10,
+        "retry_rate_consistency": 0.20,
+        "backoff_safety": 0.35,
+    }
+    return _product_score("i4", fields, components, weights)
+
+
+# i2 is special-cased in decide() (it takes a verdict_score kwarg), so it is
+# deliberately not in this table.
+GRADERS = {"i1": grade_i1, "i3": grade_i3, "i4": grade_i4}
+
+
+def decide(
+    kind: str,
+    completion: str,
+    record: dict,
+    live: LiveState,
+    verdict_score: float | None = None,
+) -> Score:
+    """Parse the submission once, then grade it with the kind's grader.
+
+    i2 takes a precomputed verdict_score from the async judge; the rest are pure.
+    Unparseable submissions score 0 and never raise.
+    """
+    fields = parse_submission(completion)
+    if fields is None:
+        return Score(value=0.0, answer=None, explanation="unparseable submission")
+    if kind == "i2":
+        return grade_i2(fields, record, live, verdict_score or 0.0)
+    grader = GRADERS.get(kind)
+    if grader is None:
+        raise ValueError(f"unknown task kind: {kind}")
+    return grader(fields, record, live)
+
+
+# i2 judge: one binary dimension. The grader already knows the live-forced state;
+# the judge only decides whether the agent's verdict agrees with it. Temp-0,
+# Unknown -> 0, so most of the i2 score stays deterministic.
+_JUDGE_TEMPLATE = """
+You are grading one dimension of a 5G core on-call assessment: did the engineer
+correctly classify the live registration load state?
+
+The engineer's assessment:
+{answer}
+
+Decide whether the engineer concluded the core is under an overload/storm or is
+at normal/idle load. Reply with exactly one line:
+GRADE: STORM    (if they concluded overload/storm/excessive registration load)
+GRADE: NORMAL   (if they concluded normal/idle/no overload)
+GRADE: UNKNOWN  (if they did not commit to either)
+""".strip()
+
+_GRADE_TO_STATE = {"storm": "overloaded", "normal": "normal"}
+
+
+def judge_verdict_score(judge_reply: str, expected_state: str) -> float:
+    """Map a judge reply + the live-forced state to 1.0 (agree) or 0.0 (not)."""
+    token = parse_judge_grade(judge_reply)
+    if token is None or token not in _GRADE_TO_STATE:
+        return 0.0
+    return 1.0 if _GRADE_TO_STATE[token] == expected_state else 0.0
+
+
+async def judge_load_state(
+    answer: str, expected_state: str, model: Model | None = None
+) -> float:
+    """Ask the judge model whether the agent's verdict matches the live state."""
+    judge = model or get_model(role="judge", default=DEFAULT_JUDGE_MODEL)
+    reply = await judge.generate(
+        _JUDGE_TEMPLATE.format(answer=answer),
+        config=GenerateConfig(temperature=0.0),
+    )
+    return judge_verdict_score(reply.completion, expected_state)
+
+
+def _frozen_live_state(state: TaskState) -> LiveState:
+    """Read back the snapshot world_setup froze at handoff.
+
+    Grading reads this frozen ground truth, never a fresh Prometheus query, so an
+    agent action during the episode cannot move the numbers it is graded against.
+    A missing snapshot means world_setup did not run before scoring: an infra/
+    wiring fault, which raises (and errors the sample) rather than scoring a model.
+    """
+    snapshot = state.store.get(LIVE_SNAPSHOT_KEY)
+    if snapshot is None:
+        raise RuntimeError(
+            "live snapshot missing from the sample store; world_setup must run "
+            "and freeze the snapshot before scoring"
+        )
+    return LiveState(**snapshot)
+
+
+@scorer(metrics=[mean(), stderr()])
+def signal_storm_scorer() -> Scorer:
+    async def score(state: TaskState, target: Target) -> Score:
+        kind = state.metadata["task_kind"]
+        live = _frozen_live_state(state)
+        verdict_score: float | None = None
+        if kind == "i2":
+            verdict_score = await judge_load_state(
+                state.output.completion, state.metadata["expected_state"]
+            )
+        return decide(
+            kind, state.output.completion, state.metadata, live, verdict_score
+        )
+
+    return score

@@ -1,0 +1,11 @@
+# Scrapes the AMF metrics endpoint. Target is the compose service name open5gs-aio
+# on port 9090; the AMF binds 0.0.0.0:9090 (config/amf.yaml, P2 adaptation), so a
+# separate prometheus container reaches it over the default bridge by service DNS.
+# Derived from overlays/common/prometheus.yaml (k8s ConfigMap -> compose file).
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  - job_name: open5gs-amf
+    static_configs:
+      - targets: ["open5gs-aio:9090"]

@@ -1,0 +1,178 @@
+# Local docker-compose substrate for the signal_storm_bench eval (Phase P2).
+#
+# Boots the Open5GS 5G core (all-in-one), seeds the subscriber pool, scrapes the live
+# AMF metrics with Prometheus, and holds a PacketRusher injector idle so the eval can
+# drive a real NGAP-over-SCTP registration storm on demand. No Kubernetes.
+#
+# Collapsed from the k8s recipe open5gs_signaling_storm_sandbox (see
+# docs/topology-notes.md for every deviation and provenance). Core image is the
+# upstream prebuilt ghcr.io/niloysh/open5gs:v2.7.0; the injector is built locally
+# (PacketRusher publishes no image).
+#
+# Worlds (select per run via env on the packetrusher service):
+#   storm     STORM_RATE=120 UE_COUNT=6000 (defaults below)  -> injector floods the AMF
+#   baseline  STORM_RATE=0   UE_COUNT=0                       -> injector idle, counter ~0
+# The storm is triggered on demand:
+#   docker compose exec packetrusher /storm.sh run
+# See docs/topology-notes.md for the exact eval tool interface.
+
+services:
+  mongodb:
+    image: mongo
+    restart: unless-stopped
+    volumes:
+      - mongodb:/data/db
+      - ./config/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # One-shot subscriber seed. Reads the shared identity env (same source the injector
+  # uses) and writes POOL_SIZE subscribers into open5gs.subscribers. Idempotent.
+  seed:
+    image: python:3.11-slim
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    environment: &identity
+      # Single source of UE + subscriber identity (overlays/common/identity.yaml).
+      MCC: "001"
+      MNC: "01"
+      MSIN_BASE: "0000000001"
+      # Over-provisioned to UE_COUNT so the whole storm registers real subscribers;
+      # the reginitreq > reginitsucc deficit is then pure AMF overload, not auth
+      # rejection of unseeded IMSIs.
+      POOL_SIZE: "6000"
+      KEY: "465B5CE8B199B49FAA5F0A2EE238A6BC"
+      OPC: "E8ED289DEBA952E4283B54E88E6183CA"
+      AMF_FIELD: "8000"
+      SST: "1"
+      SST_STR: "01"
+      SD: "000001"
+      # Compose world: AMF NGAP binds n2network 10.10.2.2 (config/amf.yaml), not the
+      # k8s NAD's 10.10.3.200.
+      AMF_NGAP_IP: "10.10.2.2"
+      AMF_NGAP_PORT: "38412"
+    volumes:
+      - ./config/seed.py:/seed.py:ro
+    command: ["/bin/sh", "-c", "pip install --quiet pymongo && python /seed.py"]
+    restart: "no"
+
+  # Open5GS all-in-one (NRF, SCP, AMF, SMF, AUSF, UDM, UDR, PCF, NSSF, BSF, UPF).
+  # privileged: init.sh creates the ogstun tun device + iptables masquerade.
+  open5gs-aio:
+    # Inspect's default sandbox: the long-lived 5G core. Tools exec into named
+    # services (open5gs-aio, prometheus, packetrusher); this just satisfies
+    # Inspect's requirement for one default and keeps it on the always-up core.
+    x-default: true
+    image: ghcr.io/niloysh/open5gs:v2.7.0
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      seed:
+        condition: service_completed_successfully
+    command: ["/open5gs/config/init.sh"]
+    # Bound the core's CPU so its emergent registration throughput (reginitsucc) is
+    # capped below the offered storm rate, regardless of host speed. Without this
+    # the AMF keeps up at the recipe defaults and no sustained deficit forms, which
+    # degenerates the sized/verify tasks (t7/t8/t9). See docs/topology-notes.md
+    # "Sustained-overload tuning" (reproducibility deviation from the k8s recipe).
+    cpus: 0.70
+    environment:
+      - DEBUG_MODE=true
+      - CONFIG_PATH=/open5gs/config
+      - DB_URI=mongodb://mongodb/open5gs
+    # No host port publishing: the eval reaches every service over the compose
+    # network (tools exec inside the prometheus container, NGAP rides the n2
+    # bridge), so publishing collides across parallel Inspect sandboxes. To debug
+    # one world by hand, uncomment:
+    #   ports:
+    #     - "9090:9090"        # AMF metrics
+    #     - "38412:38412/sctp" # AMF NGAP
+    volumes:
+      - ./config:/open5gs/config
+    privileged: true
+    restart: always
+    healthcheck:
+      # AMF up == NGAP SCTP (38412) listening AND metrics (9090) listening. The image
+      # has no curl; ss (iproute2) is present. Both sockets up means the AMF accepts
+      # NGAP and serves Prometheus.
+      test: ["CMD-SHELL", "ss -lntH | grep -q ':9090' && ss -lnH | grep -q ':38412' || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    networks:
+      default:
+      n2network:
+        ipv4_address: 10.10.2.2
+      n3network:
+        ipv4_address: 10.10.3.2
+      n4network:
+        ipv4_address: 10.10.4.2
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    depends_on:
+      - open5gs-aio
+    command: ["--config.file=/etc/prometheus/prometheus.yml"]
+    # No host port publishing (see open5gs-aio note). To inspect the Prometheus
+    # UI/API by hand, uncomment:
+    #   ports:
+    #     - "9091:9090"
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+
+  # PacketRusher injector. Built locally (no official image). Idle by default; the eval
+  # drives a storm with `docker compose exec packetrusher /storm.sh run`. Pure-Go
+  # control-plane storm over SCTP: no gtp5g module, no privilege. Takes a static n2 IP
+  # the AMF (10.10.2.2) can SCTP back to, matching config.yml's gNB controlif.
+  packetrusher:
+    build:
+      context: .
+      dockerfile: packetrusher.Dockerfile
+    image: packetrusher:storm
+    depends_on:
+      open5gs-aio:
+        condition: service_healthy
+    environment:
+      <<: *identity
+      # Per-world knobs. Defaults = the storm world (overlays/storm). The offered
+      # rate sits well above the cpu-capped AMF's throughput, so the storm leaves a
+      # sustained, permanent reginitreq > reginitsucc deficit. For baseline, override
+      # at exec time:  -e STORM_RATE=0 -e UE_COUNT=0
+      STORM_RATE: "120"
+      UE_COUNT: "6000"
+      DURATION_S: "90"
+    entrypoint: ["/bin/sh"]
+    command: ["/storm.sh", "idle"]
+    volumes:
+      - ./config/config.yml.tmpl:/config-tmpl/config.yml.tmpl:ro
+      - ./config/storm.sh:/storm.sh:ro
+    networks:
+      n2network:
+        ipv4_address: 10.10.2.50
+
+networks:
+  default:
+    driver: bridge
+  n2network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.10.2.0/24
+  n3network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.10.3.0/24
+  n4network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.10.4.0/24
+
+volumes:
+  mongodb: {}
